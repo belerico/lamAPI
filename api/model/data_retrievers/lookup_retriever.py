@@ -9,10 +9,10 @@ class LookupRetriever:
         #self.candidate_cache_collection.create_index([('cell', 1), ('type', 1), ('kg', 1), ('size', 1)], unique=True)
         self.elastic_retriever = Elastic()
 
-    def search(self, label, limit = 100, kg = "wikidata", fuzzy = False, types = None, ids = None):
+    def search(self, name, limit = 100, kg = "wikidata", fuzzy = False, types = None, ids = None):
         self.candidate_cache_collection = self.database.get_requested_collection("cache", kg=kg)
-        label_norm = label.strip().lower()   
-        query_result = self._exec_query(label_norm, limit = limit, kg = kg,
+        name_norm = name.strip().lower()   
+        query_result = self._exec_query(name_norm, limit = limit, kg = kg,
                                         fuzzy = fuzzy, types = types, ids = ids)
             
         return query_result
