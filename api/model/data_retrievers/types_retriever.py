@@ -10,14 +10,14 @@ class TypesRetriever:
             return self.database.get_requested_collection("types", kg).find({'entity': {'$in': list(entities)}})
     
 
-    def get_types_output(self, entities = [], kg = []):
+    async def get_types_output(self, entities = [], kg = []):
 
         final_response = {}
         
         if kg in self.database.get_supported_kgs():
             wiki_types_retrieved = self.get_types(entities=entities, kg = kg)
             wiki_entity_types = {}
-            for entity_type in wiki_types_retrieved:
+            async for entity_type in wiki_types_retrieved:
                 entity_id = entity_type['entity']
                 entity_types = entity_type['types']
 

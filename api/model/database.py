@@ -2,7 +2,9 @@ import os
 import random
 from faker import Faker
 from pymongo import MongoClient
+from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime
+
 
 # Constants
 MONGO_ENDPOINT, MONGO_PORT = os.environ["MONGO_ENDPOINT"].split(":")
@@ -15,17 +17,15 @@ FAKE_DB_NAME = "fake"  # Name of the fake database
 class Database():
 
     def __init__(self):
-        self.mongo = MongoClient(
-            MONGO_ENDPOINT,
-            int(MONGO_PORT), 
-            username = MONGO_USERNAME, 
-            password = MONGO_PASSWORD
+        self.mongo = AsyncIOMotorClient(
+            f"mongodb://{MONGO_USERNAME}:{MONGO_PASSWORD}@{MONGO_ENDPOINT}:{MONGO_PORT}"
         )
         self.mappings = {kg.lower():None for kg in SUPPORTED_KGS}
         self.mappings["fake"] = FAKE_DB_NAME  # Add the fake database to mappings
-        self.initialize_and_populate_fake_db()
+        
+    async def initialize(self):
         history = {}
-        for db in self.mongo.list_database_names():
+        for db in await self.mongo.list_database_names():
             # Handle real databases
             kg_name = ''.join(filter(str.isalpha, db))
             date = ''.join(filter(str.isdigit, db))
@@ -40,14 +40,11 @@ class Database():
             # Initialize the fake database
             elif kg_name == "fake":
                 self.mappings["fake"] = FAKE_DB_NAME
-
-    def initialize_and_populate_fake_db(self):
-        if FAKE_DB_NAME not in self.mongo.list_database_names():
-            self.populate_fake_db()
-
+        if FAKE_DB_NAME not in await self.mongo.list_database_names():
+            await self.populate_fake_db()
             print("Fake database initialized and populated.")
 
-    def populate_fake_db(self):
+    async def populate_fake_db(self):
         fake_db = self.mongo[FAKE_DB_NAME]
         fake = Faker()
         nrandom_exmple = 10000
@@ -83,7 +80,7 @@ class Database():
                 "limit": 100,
                 "query": {"query": {"match": {"name": word}}}
             }
-            cache_collection.insert_one(cache_data)
+            await cache_collection.insert_one(cache_data)
 
         # Populating the 'items' collection
         items_collection = fake_db["items"]
@@ -98,7 +95,7 @@ class Database():
                 "popularity": random.randint(1, 1000),
                 "category": "entity"
             }
-            items_collection.insert_one(items_data)
+            await items_collection.insert_one(items_data)
 
         # Populating the 'literals' collection
         literals_collection = fake_db["literals"]
@@ -139,7 +136,7 @@ class Database():
                     "Q" + str(fake.random_number(digits=5)): ["P" + str(fake.random_number(digits=5))]
                 }
             }
-            objects_collection.insert_one(objects_data)
+            await objects_collection.insert_one(objects_data)
 
         # Populating the 'types' collection
         types_collection = fake_db["types"]
@@ -151,7 +148,7 @@ class Database():
                     "P" + str(fake.random_number(digits=5)): ["Q" + str(fake.random_number(digits=5))]
                 }
             }
-            types_collection.insert_one(types_data)
+            await types_collection.insert_one(types_data)
 
         print("Fake database collections populated.")
 
@@ -187,6 +184,7 @@ class Database():
         }
 
     def get_requested_collection(self, collection, kg = "wikidata"):
+        print(self.mappings, flush=True)
         if kg in self.mappings: 
             return self.mongo[self.mappings[kg]][collection]
         else:

@@ -33,14 +33,4 @@ class ParamsValidator():
         except Exception as e:
 
             return False, build_error("k parameter cannot be converted to int", 400) 
-
-    def validate_bool(self, string_value):
-        if string_value is not None:
-            if string_value.lower() == "true":
-                return True, True
-            elif string_value.lower() == "false":
-                return True, False
-            else:
-                return False, build_error("Bool parameter cannot be converted", 400)
-        else:
-            return True, False
+        

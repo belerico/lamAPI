@@ -2,6 +2,7 @@ from model.elastic import Elastic
 from model.utils import editdistance, clean_str, compute_similarity_between_string
 import datetime
 
+
 class LookupRetriever:
 
     def __init__(self, database):
@@ -9,15 +10,15 @@ class LookupRetriever:
         #self.candidate_cache_collection.create_index([('cell', 1), ('type', 1), ('kg', 1), ('size', 1)], unique=True)
         self.elastic_retriever = Elastic()
 
-    def search(self, name, limit = 100, kg = "wikidata", fuzzy = False, types = None, ids = None):
+    async def search(self, name, limit = 100, kg = "wikidata", fuzzy = False, types = None, ids = None):
         self.candidate_cache_collection = self.database.get_requested_collection("cache", kg=kg)
         name_norm = name.strip().lower()   
-        query_result = self._exec_query(name_norm, limit = limit, kg = kg,
+        query_result = await self._exec_query(name_norm, limit = limit, kg = kg,
                                         fuzzy = fuzzy, types = types, ids = ids)
             
         return query_result
 
-    def _exec_query(self, label, limit=100, kg = "wikidata", fuzzy = False, types = None, ids = None):
+    async def _exec_query(self, label, limit=100, kg = "wikidata", fuzzy = False, types = None, ids = None):
         
         if types is not None:
             types = types.split(" ")
@@ -25,18 +26,18 @@ class LookupRetriever:
             types = " ".join(types)
 
         body = {"cell": label, "type": types, "kg": kg, "fuzzy": fuzzy, "limit": limit}
-        #print("body", body, flush=True)
-        result = self.candidate_cache_collection.find_one_and_update(
+        # print("body", body, flush=True)
+        result = await self.candidate_cache_collection.find_one_and_update(
             body,
-            {"$set": { "lastAccessed": datetime.datetime.utcnow() }}
+            {"$set": {"lastAccessed": datetime.datetime.now(datetime.timezone.utc)}}
         )
-       
+
         if result is not None:
             final_result = result["candidates"]
             final_result = {label: final_result}
             return final_result
 
-        body = self.create_query(name = label, fuzzy = fuzzy, types = types)
+        body = self.create_query(name=label, fuzzy=fuzzy, types=types)
         history = {}
         final_result = {label: []}
         result = []
@@ -74,7 +75,11 @@ class LookupRetriever:
         ids = list(set([t for entity in result for t in entity["types"].split(" ")]))
         items_collection = self.database.get_requested_collection("items", kg=kg)        
         results = items_collection.find({"category": "type", "entity": {"$in": ids}})
-        types_id_to_name = {result["entity"]:result["labels"].get("en") for result in results}
+        # Iterate over the query results
+        types_id_to_name = {}
+        async for result in results:
+            types_id_to_name[result["entity"]] = result["labels"].get("en")
+        #types_id_to_name = {result["entity"]:result["labels"].get("en") for result in await results}
 
         for entity in result:
             id_entity = entity["id"]
@@ -110,7 +115,7 @@ class LookupRetriever:
     
        
         try:
-            self.candidate_cache_collection.insert_one({
+            await self.candidate_cache_collection.insert_one({
                 "cell": label,
                 "type": types,
                 "kg": kg,
@@ -126,33 +131,6 @@ class LookupRetriever:
         return final_result
 
     
-    def _exec_multi_query(self, labels, limit=100, kg = "wikidata", fuzzy = False, ngrams = False, types = None, ids = None):
-        if types is not None:
-            types = types.split(" ").sort()
-       
-        body = {"cell": {"$in": labels}, "type": types, "kg": kg, "fuzzy": fuzzy, "ngrams": ngrams, "limit": limit}
-        result = self.candidate_cache_collection.find(body)
-        final_result = {}
-        cell_buffer = []
-        ids = []
-        if result is not None:
-            for item in result:
-                final_result[item["cell"]] = item["candidates"]
-                cell_buffer.append(item["cell"])
-                ids.append(item["_id"])
-        
-        self.candidate_cache_collection.update_many(
-            {"_id": {"$in": ids}},
-            {"$set": { "lastAccessed": datetime.datetime.utcnow() }}
-        )
-
-        missing_cells = set(labels) - set(cell_buffer)
-        for cell in missing_cells:
-            query_result = self._exec_query(cell, limit = limit, kg = kg, fuzzy = fuzzy, ngrams = ngrams, types = types)
-            final_result[cell] = query_result[cell]
-
-        return final_result
-
     def create_query(self, name, fuzzy=False, types=None):
         splitted_name = name.split(" ")
         
