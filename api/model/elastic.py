@@ -13,18 +13,29 @@ ELASTIC_ENDPOINT, ELASTIC_PORT = os.environ["ELASTIC_ENDPOINT"].split(":")
 with open("index_mappings.json") as f:
     indexes_mappings = json.loads(f.read())
 
+
 # Function to fetch the certificate fingerprint
 def get_certificate_fingerprint():
-    bashCommand = """
-                    openssl s_client -connect es01:9200 -servername es01 -showcerts </dev/null 2>/dev/null | 
-                    openssl x509 -fingerprint -sha256 -noout -in /dev/stdin
-                """
-    p = subprocess.Popen(
-        bashCommand, 
-        stdout=subprocess.PIPE, shell=True)
-    output = p.communicate()
-    fingerprint = output[0].decode("UTF-8")
-    return fingerprint.split("=")[1][0:-1]
+    max_retries = 10
+    retries = 0
+    while retries < max_retries:
+        try:
+            bashCommand = """
+                            openssl s_client -connect es01:9200 -servername es01 -showcerts </dev/null 2>/dev/null | 
+                            openssl x509 -fingerprint -sha256 -noout -in /dev/stdin
+                        """
+            p = subprocess.Popen(
+                bashCommand, 
+                stdout=subprocess.PIPE, shell=True)
+            output = p.communicate()
+            fingerprint = output[0].decode("UTF-8")
+            return fingerprint.split("=")[1][0:-1]
+        except Exception as e:
+            print(f"Error fetching certificate fingerprint: {e}. Retrying...")
+            retries += 1
+            sleep(5)  # Wait for 5 seconds before retrying
+    raise Exception("Failed to fetch certificate fingerprint after multiple retries.")
+
 
 # Retry decorator function to handle Elasticsearch connection retries
 def retry(func):

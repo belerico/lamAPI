@@ -123,17 +123,80 @@ class TypesRequest(BaseModel):
 
 @app.post("/types")
 async def get_types(
-    entities: TypesRequest,
+    entities: List[str] = Body(..., description="List of entity IDs", example=["Q30", "Q31"]),
     token: str = Query(..., description="Private token to access the APIs."),
-    kg: str = Query("dbpedia", description="The Knowledge Graph to query. Available values: 'dbpedia' or 'wikidata'.")
+    kg: str = Query("wikidata", description="The Knowledge Graph to query. Available values: 'wikidata'.")
 ):
-    # Replace this with your actual logic to retrieve types
-    # The logic should be asynchronous if you're making any IO-bound operations
+    
+    token_is_valid, token_error = params_validator.validate_token(token)
+    if not token_is_valid:
+        return token_error
+    
     try:
-        # Here you would use `entities.entities` to get the list of entity IDs from the request
-        # And you would pass `kg` along to whatever function needs it
-        result = [] #some_async_function_to_get_types(entities.entities, kg)
         return await type_retriever.get_types_output(entities, kg)
-        #return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+
+@app.post("/objects")
+async def get_objects(
+    entities: List[str] = Body(..., description="List of entity IDs", example=["Q30", "Q31"]),
+    token: str = Query(..., description="Private token to access the APIs."),
+    kg: str = Query("wikidata", description="The Knowledge Graph to query. Available values: 'wikidata'.")
+):
+    try:
+        return await objects_retriever.get_objects_output(entities, kg)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/predicates")
+async def get_predicates(
+    entities: List[List[str]] = Body(..., description="List of entity IDs", example=[["Q30","Q60"], ["Q166262","Q25191"]]),
+    token: str = Query(..., description="Private token to access the APIs."),
+    kg: str = Query("wikidata", description="The Knowledge Graph to query. Available values: 'wikidata'.")
+):
+    try:
+        return await predicates_retriever.get_predicates_output(entities, kg)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+@app.post("/literals")
+async def get_literals(
+    entities: List[str] = Body(..., description="List of entity IDs", example=["Q30", "Q31"]),
+    token: str = Query(..., description="Private token to access the APIs."),
+    kg: str = Query("wikidata", description="The Knowledge Graph to query. Available values: 'wikidata'.")
+):
+    try:
+        return await literals_retriever.get_literals_output(entities, kg)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+@app.post("/labels")
+async def get_labels(
+    entities: List[str] = Body(..., description="List of entity IDs", example=["Q30", "Q31"]),
+    token: str = Query(..., description="Private token to access the APIs."),
+    kg: str = Query("wikidata", description="The Knowledge Graph to query. Available values: 'wikidata'.")
+):
+    try:
+        return await labels_retriever.get_labels_output(entities, kg)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e), "traceback": traceback.format_exc()})
+    
+
+@app.post("/column-analysis")
+async def get_column_analysis(
+    data: List[List[str]] = Body( ..., 
+                                description="List of values", 
+                                example=[["10","100","1000"],
+                                        ["12/11/1997","26/08/1997","14/05/2016"],
+                                        ["London","NewYork","Paris"]]
+                            ),
+    token: str = Query(..., description="Private token to access the APIs.")
+):
+    try:
+        return column_analysis_classifier.classifiy_columns(columns=data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e), "traceback": traceback.format_exc()})

@@ -27,26 +27,27 @@ class PredicatesRetriever:
         return list(entity_set), sub_obj_mapping
 
 
-    def get_predicates_output(self, entities, kg = "wikidata"):
-        all_entities, sub_obj_mapping = self.prepare_data(entities)
-        
+    async def get_predicates(self, entities, kg = "wikidata"):
+        entities, sub_obj_mapping = self.prepare_data(entities)
         entity_objects = {}
-       
-        
-        if kg in self.database.get_supported_kgs():
-            entity_objects =  self.database.get_requested_collection("objects", kg).get_objects(all_entities, kg)
+        entity_objects =  self.database.get_requested_collection("objects", kg).find({'entity': {'$in': entities}})
+        print("sub_obj_mapping", sub_obj_mapping)
+        wiki_response = {}
+        async for entity in entity_objects:
+            print(entity)
+            subj = entity['entity']
+            entity_objects = entity['objects']
+            for current_obj in sub_obj_mapping.get(subj, []):
+                if current_obj in entity_objects.keys():
+                    wiki_response[f"{subj} {current_obj}"] = entity_objects[current_obj]
 
-        final_response = {}
+        return wiki_response
     
-        
-        if kg in self.database.get_supported_kgs():
-            wiki_response = {}
-            for subj in sub_obj_mapping:
-                if subj in entity_objects:
-                    for current_obj in sub_obj_mapping[subj]:
-                        if current_obj in entity_objects[subj]['objects'].keys():
-                            wiki_response[f"{subj} {current_obj}"] = entity_objects[subj]['objects'][current_obj]
 
-            final_response[kg] = wiki_response
+    async def get_predicates_output(self, entities = [], kg = "wikidata"): 
+        final_response = {} 
+    
+        if kg in self.database.get_supported_kgs():
+            final_response[kg] = await self.get_predicates(entities, kg = kg)  
 
         return final_response
