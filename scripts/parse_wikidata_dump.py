@@ -68,7 +68,8 @@ MONGO_ENDPOINT_USERNAME = os.environ["MONGO_INITDB_ROOT_USERNAME"]
 MONGO_ENDPOINT_PASSWORD = os.environ["MONGO_INITDB_ROOT_PASSWORD"]
 current_date = datetime.now()
 formatted_date = current_date.strftime("%d%m%Y")
-DB_NAME = f"wikidata{formatted_date}"
+#DB_NAME = f"wikidata{formatted_date}"
+DB_NAME = f"wikidata17012025"
 
 client = MongoClient(
     MONGO_ENDPOINT,
@@ -597,6 +598,8 @@ def parse_wikidata_dump():
             pbar.total = round(compressed_file_size / current_average_size)
             pbar.update(1)
 
+            if items_c.find_one({"entity": item["id"]}) is not None:  # Skip if already processed
+                continue
             parse_data(item, i, geolocation_subclass, organization_subclass)
         except json.decoder.JSONDecodeError:
             continue
