@@ -1,9 +1,12 @@
 import os
+from datetime import datetime
 
 from pymongo import MongoClient
 
 # Constants
 MONGO_ENDPOINT, MONGO_PORT = os.environ["MONGO_ENDPOINT"].split(":")
+MONGO_ENDPOINT_USERNAME = os.environ["MONGO_INITDB_ROOT_USERNAME"]
+MONGO_ENDPOINT_PASSWORD = os.environ["MONGO_INITDB_ROOT_PASSWORD"]
 SUPPORTED_KGS = os.environ["SUPPORTED_KGS"]
 SUPPORTED_KGS = SUPPORTED_KGS.split(",")
 
@@ -11,7 +14,12 @@ SUPPORTED_KGS = SUPPORTED_KGS.split(",")
 class Database:
 
     def __init__(self):
-        self.mongo = MongoClient(MONGO_ENDPOINT, int(MONGO_PORT))
+        self.mongo = MongoClient(
+            MONGO_ENDPOINT,
+            int(MONGO_PORT),
+            username=MONGO_ENDPOINT_USERNAME,
+            password=MONGO_ENDPOINT_PASSWORD,
+        )
         self.mappings = {kg.lower(): None for kg in SUPPORTED_KGS}
         self.update_mappings()
         self.create_indexes()

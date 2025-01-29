@@ -68,8 +68,8 @@ MONGO_ENDPOINT="localhost"
 MONGO_ENDPOINT_PASSWORD = os.environ["MONGO_INITDB_ROOT_PASSWORD"]
 current_date = datetime.now()
 formatted_date = current_date.strftime("%d%m%Y")
-#DB_NAME = f"wikidata{formatted_date}"
-DB_NAME = f"wikidata17012025"
+DB_NAME = f"wikidata{formatted_date}"
+#DB_NAME = f"wikidata17012025"
 
 client = MongoClient(
     MONGO_ENDPOINT,
@@ -588,6 +588,7 @@ def parse_wikidata_dump():
     )
 
     pbar = tqdm(total=initial_total_lines_estimate)
+    count=0
     for i, line in enumerate(file):
         try:
             item = json.loads(line[:-2])  # Remove the trailing characters
@@ -600,7 +601,11 @@ def parse_wikidata_dump():
 
             if items_c.find_one({"entity": item["id"]}) is not None:  # Skip if already processed
                 continue
-            parse_data(item, i, geolocation_subclass, organization_subclass)
+            if count<=10000:
+                parse_data(item, i, geolocation_subclass, organization_subclass)
+                count += 1
+            else:
+                break
         except json.decoder.JSONDecodeError:
             continue
         except Exception as e:

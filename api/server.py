@@ -238,6 +238,8 @@ class BaseEndpoint(Resource):
         "limit": "The number of entities to be retrieved. The default value is 1000.",
         "kind": "Kind of Named Entity to be matched. Available values: <code>entity</code>, <code>disambiguation</code>, <code>type</code> and <code>predicate</code>.",
         "NERtype": "Type of Named Entity to be matched. Available values: <code>LOC</code>, <code>ORG</code>, <code>PERS</code> and <code>OTHERS</code>.",
+        "explicit_WDtypes" : "Type or types belonging to Wikidata.",
+        "extended_WDtypes" : "Type or types belonging to Wikidata extended from the explicit types thanks to the trnasitive closure.",
         "kg": "The Knowledge Graph to query. Available values: <code>wikidata</code>. Default is <code>wikidata</code>.",
         "fuzzy": "Set this param to True if fuzzy search must be applied. Default is <code>False</code>.",
         "types": "Types to be matched in the Knowledge Graph as constraint in the retrieval. Add Types separeted by spaces. E.g. Scientist Philosopher Person",
@@ -257,6 +259,8 @@ class Lookup(BaseEndpoint):
         parser.add_argument("token", type=str, location="args")
         parser.add_argument("kind", type=str, location="args")
         parser.add_argument("NERtype", type=str, location="args")
+        parser.add_argument("explicit_WDtypes", type=str, location="args")
+        parser.add_argument("extended_WDtypes", type=str, location="args")
         parser.add_argument("kg", type=str, location="args")
         parser.add_argument("fuzzy", type=str, location="args")
         parser.add_argument("types", type=str, location="args")
@@ -274,6 +278,8 @@ class Lookup(BaseEndpoint):
         types = args["types"]
         kind = args["kind"]
         NERtype = args["NERtype"]
+        explicit_WDtypes = args["explicit_WDtypes"]
+        extended_WDtypes = args["extended_WDtypes"]
         language = args["language"]
         ids = args["ids"]
         query = args["query"]
@@ -316,6 +322,8 @@ class Lookup(BaseEndpoint):
                 types=types,
                 kind=kind,
                 NERtype=NERtype_error_or_value,
+                explicit_WDtypes=explicit_WDtypes,
+                extended_WDtypes=extended_WDtypes,
                 language=language,
                 ids=ids,
                 query=query,

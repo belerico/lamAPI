@@ -166,3 +166,4 @@ esdata*/
 mongo-data/
 data/
 elasticdata/
+.vscode/launch.json

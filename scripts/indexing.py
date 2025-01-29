@@ -13,6 +13,7 @@ from tqdm import tqdm
 
 
 def index_documents(es_host, es_port, buffer, max_retries=5):
+    es_host = "localhost"
     es = Elasticsearch(
         hosts=f"http://{es_host}:{es_port}",
         request_timeout=60,
@@ -60,6 +61,7 @@ def generate_dot_notation_options(name):
 
 
 def create_elasticsearch_client(endpoint, port):
+    endpoint = "localhost"
     return Elasticsearch(
         hosts=f"http://{endpoint}:{port}",
         request_timeout=60,
@@ -69,7 +71,13 @@ def create_elasticsearch_client(endpoint, port):
 
 
 def create_mongo_client(endpoint, port):
-    return MongoClient(endpoint, int(port))
+    
+    MONGO_ENDPOINT_USERNAME = os.environ["MONGO_INITDB_ROOT_USERNAME"]
+    MONGO_ENDPOINT_PASSWORD = os.environ["MONGO_INITDB_ROOT_PASSWORD"]
+
+    return MongoClient(endpoint, int(port),
+    username=MONGO_ENDPOINT_USERNAME,
+    password=MONGO_ENDPOINT_PASSWORD,)
 
 
 def print_usage():
@@ -98,7 +106,7 @@ def index_data(
     db_name,
     collection_name,
     mapping,
-    batch_size=100000,
+    batch_size=10000,
     max_threads=None,
 ):
     if max_threads is None:
@@ -145,6 +153,19 @@ def index_data(
         aliases = item.get("aliases", {})
         description = item.get("description", {}).get("value", None)
         NERtype = item.get("NERtype", None)
+        explicit_WDtypes = item.get("explicit_WDtypes", None)
+        
+        
+        # Check and log issues with extended_WDtypes
+        extended_WDtypes = item.get("extended_WDtypes", None)
+
+        # Print NERtype and explicit_WDtypes directly
+        #print(f"Entity ID: {id_entity}")
+        #print(f"NERtype: {NERtype}")
+        #print(f"explicit_WDtypes: {WD_type}")        
+        #print(f"extended_WDtypes: {extended_WDtypes}")
+
+
         types = item.get("types", {}).get("P31", [])
         kind = item.get("kind", None)
         popularity = int(item.get("popularity", 0))
@@ -204,6 +225,8 @@ def index_data(
                 "description": description,
                 "kind": kind,
                 "NERtype": NERtype,
+                "explicit_WDtypes": explicit_WDtypes,
+                "extended_WDtypes": extended_WDtypes,
                 "types": " ".join(types),
                 "length": len(name),
                 "ntoken": len(name.split(" ")),
@@ -271,6 +294,7 @@ def main():
 
     ELASTIC_ENDPOINT, ELASTIC_PORT = os.environ["ELASTIC_ENDPOINT"].split(":")
     MONGO_ENDPOINT, MONGO_ENDPOINT_PORT = os.environ["MONGO_ENDPOINT"].split(":")
+    MONGO_ENDPOINT="localhost"
     es = create_elasticsearch_client(ELASTIC_ENDPOINT, ELASTIC_PORT)
     mongo_client = create_mongo_client(MONGO_ENDPOINT, MONGO_ENDPOINT_PORT)
 
