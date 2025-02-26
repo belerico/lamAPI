@@ -394,7 +394,7 @@ class LookupRetriever:
     ):
         # Base query
         query_base = {
-            "query": {"bool": {"must": [], "filter": []}},
+            "query": {"bool": {"must": [], "should": [], "filter": []}},
             "sort": [{"popularity": {"order": "desc"}}],
             "_source": {"excludes": ["language"]},
         }
@@ -423,30 +423,60 @@ class LookupRetriever:
 ## overlap between Q and T_i: retrieves only entities with same name and Q included in T_i
 ############################################################################################
         if NERtype:
-            query_base["query"]["bool"]["filter"].append({
-                "terms": {
-                    "NERtype": [NERtype]
-                }
-            })
+            query_base["query"]["bool"]["must"].append(
+                {"terms": {"NERtype": [NERtype]}})
+            
+        '''   
+        should_clause = []
+        if NERtype:
+            if isinstance(NERtype, list):
+                should_clause = [{"term": {"NERtype": NERtype}}]
+            else:
+                should_clause = [{"term": {"NERtype": NERtype}}]
+
+         query_base["query"]["bool"]["should"].append(should_clause)
+        '''
 
 ############################################################################################
 ############################################################################################
 
         if explicit_WDtypes:
-            query_base["query"]["bool"]["filter"].append({
+            query_base["query"]["bool"]["must"].append({
                 "terms": {
                     "explicit_WDtypes": [explicit_WDtypes]
                 }
             })
+            
+        '''   
+        should_clause = []
+        if explicit_WDtypes:
+            if isinstance(explicit_WDtypes, list):
+                should_clause = [{"term": {"explicit_WDtypes": explicit_WDtypes}}]
+            else:
+                should_clause = [{"term": {"explicit_WDtypes": explicit_WDtypes}}]
+
+         query_base["query"]["bool"]["should"].append(should_clause)
+        '''
 
 ############################################################################################
 ############################################################################################
         if extended_WDtypes:
-            query_base["query"]["bool"]["filter"].append({
+            query_base["query"]["bool"]["must"].append({
                 "terms": {
                     "extended_WDtypes": [extended_WDtypes]
                 }
             })
+            
+        '''   
+        should_clause = []
+        if extended_WDtypes:
+            if isinstance(extended_WDtypes, list):
+                should_clause = [{"term": {"extended_WDtypes": extended_WDtypes}}]
+            else:
+                should_clause = [{"term": {"extended_WDtypes": extended_WDtypes}}]
+
+         query_base["query"]["bool"]["should"].append(should_clause)
+        '''
 
 ############################################################################################
 ############################################################################################

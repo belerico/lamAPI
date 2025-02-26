@@ -71,13 +71,16 @@ def create_elasticsearch_client(endpoint, port):
 
 
 def create_mongo_client(endpoint, port):
-    
+
     MONGO_ENDPOINT_USERNAME = os.environ["MONGO_INITDB_ROOT_USERNAME"]
     MONGO_ENDPOINT_PASSWORD = os.environ["MONGO_INITDB_ROOT_PASSWORD"]
 
-    return MongoClient(endpoint, int(port),
-    username=MONGO_ENDPOINT_USERNAME,
-    password=MONGO_ENDPOINT_PASSWORD,)
+    return MongoClient(
+        endpoint,
+        int(port),
+        username=MONGO_ENDPOINT_USERNAME,
+        password=MONGO_ENDPOINT_PASSWORD,
+    )
 
 
 def print_usage():
@@ -154,17 +157,15 @@ def index_data(
         description = item.get("description", {}).get("value", None)
         NERtype = item.get("NERtype", None)
         explicit_WDtypes = item.get("explicit_WDtypes", None)
-        
-        
+
         # Check and log issues with extended_WDtypes
         extended_WDtypes = item.get("extended_WDtypes", None)
 
         # Print NERtype and explicit_WDtypes directly
-        #print(f"Entity ID: {id_entity}")
-        #print(f"NERtype: {NERtype}")
-        #print(f"explicit_WDtypes: {WD_type}")        
-        #print(f"extended_WDtypes: {extended_WDtypes}")
-
+        # print(f"Entity ID: {id_entity}")
+        # print(f"NERtype: {NERtype}")
+        # print(f"explicit_WDtypes: {WD_type}")
+        # print(f"extended_WDtypes: {extended_WDtypes}")
 
         types = item.get("types", {}).get("P31", [])
         kind = item.get("kind", None)
@@ -294,7 +295,7 @@ def main():
 
     ELASTIC_ENDPOINT, ELASTIC_PORT = os.environ["ELASTIC_ENDPOINT"].split(":")
     MONGO_ENDPOINT, MONGO_ENDPOINT_PORT = os.environ["MONGO_ENDPOINT"].split(":")
-    MONGO_ENDPOINT="localhost"
+    MONGO_ENDPOINT = "localhost"
     es = create_elasticsearch_client(ELASTIC_ENDPOINT, ELASTIC_PORT)
     mongo_client = create_mongo_client(MONGO_ENDPOINT, MONGO_ENDPOINT_PORT)
 

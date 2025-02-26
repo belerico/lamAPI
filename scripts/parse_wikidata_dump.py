@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import asyncio
 import bz2
 import json
 import os
@@ -10,8 +11,8 @@ import time
 import traceback
 from collections import Counter
 from datetime import datetime
+
 import aiohttp
-import asyncio
 import backoff
 from pymongo import MongoClient
 from requests import get
@@ -64,11 +65,11 @@ file = bz2.BZ2File(file_path, "r")
 MONGO_ENDPOINT, MONGO_ENDPOINT_PORT = os.environ["MONGO_ENDPOINT"].split(":")
 MONGO_ENDPOINT_PORT = int(MONGO_ENDPOINT_PORT)
 MONGO_ENDPOINT_USERNAME = os.environ["MONGO_INITDB_ROOT_USERNAME"]
-MONGO_ENDPOINT="localhost"
+MONGO_ENDPOINT = "localhost"
 MONGO_ENDPOINT_PASSWORD = os.environ["MONGO_INITDB_ROOT_PASSWORD"]
 current_date = datetime.now()
 formatted_date = current_date.strftime("%d%m%Y")
-#DB_NAME = f"wikidata{formatted_date}"
+# DB_NAME = f"wikidata{formatted_date}"
 DB_NAME = f"wikidata17012025"
 
 client = MongoClient(
@@ -82,12 +83,15 @@ items_c = client[DB_NAME].items
 objects_c = client[DB_NAME].objects
 literals_c = client[DB_NAME].literals
 types_c = client[DB_NAME].types
+types_cache_c = client[DB_NAME].types_cache
+global_types_id = 0
 
 c_ref = {
     "items": items_c,
     "objects": objects_c,
     "literals": literals_c,
     "types": types_c,
+    "types_cache": types_cache_c,
 }
 
 create_indexes(client[DB_NAME])
@@ -232,10 +236,14 @@ def retrieve_superclasses(entity_id):
     """
 
     @backoff.on_exception(
-        backoff.expo, 
-        (aiohttp.ClientError, aiohttp.http_exceptions.HttpProcessingError, asyncio.TimeoutError), 
-        max_tries=5, 
-        max_time=300
+        backoff.expo,
+        (
+            aiohttp.ClientError,
+            aiohttp.http_exceptions.HttpProcessingError,
+            asyncio.TimeoutError,
+        ),
+        max_tries=5,
+        max_time=300,
     )
     def query_wikidata(sparql_client, query):
         """
@@ -255,8 +263,7 @@ def retrieve_superclasses(entity_id):
     # Set up the SPARQL client
     sparql = SPARQLWrapper(endpoint_url)
     sparql.addCustomHttpHeader(
-        "User-Agent",
-        "MyApp/1.0 (https://example.com; myemail@example.com)"
+        "User-Agent", "MyApp/1.0 (https://example.com; myemail@example.com)"
     )
 
     # Execute the query with backoff
@@ -270,7 +277,9 @@ def retrieve_superclasses(entity_id):
     if results:
         superclass_dict = {}
         for result in results["results"]["bindings"]:
-            superclass_id = result["superclass"]["value"].split("/")[-1]  # Extract entity ID from the URI
+            superclass_id = result["superclass"]["value"].split("/")[
+                -1
+            ]  # Extract entity ID from the URI
             label = result["superclassLabel"]["value"]
             superclass_dict[label] = "Q" + (superclass_id[1:])
         return list(superclass_dict.values())
@@ -278,7 +287,10 @@ def retrieve_superclasses(entity_id):
         print("No results found.")
         return []
 
+
 def parse_data(item, i, geolocation_subclass, organization_subclass):
+    global global_types_id
+
     entity = item["id"]
     labels = item.get("labels", {})
     aliases = item.get("aliases", {})
@@ -326,7 +338,6 @@ def parse_data(item, i, geolocation_subclass, organization_subclass):
     extended_WDtypes = []
     types_list = []
 
-
     if item.get("type") == "item" and "claims" in item:
         p31_claims = item["claims"].get("P31", [])
         ner_counter = Counter()
@@ -372,8 +383,22 @@ def parse_data(item, i, geolocation_subclass, organization_subclass):
             types_list.append("Q" + str(type_numeric_id))
 
     total = []
+    types_cache = []
     for el in types_list:
-        total += retrieve_superclasses(el)
+        type_ = types_cache_c.find_one({"entity": el})
+        if type_ is not None:
+            retrieved_types = type_["extended_WDtypes"]
+        else:
+            retrieved_types = retrieve_superclasses(el)
+            types_cache.append(
+                {
+                    "id_type": global_types_id,
+                    "entity": el,
+                    "extended_WDtypes": retrieved_types,
+                }
+            )
+            global_types_id += 1
+        total += retrieved_types
     extended_WDtypes = list(set(total))
 
     ################################################################
@@ -421,12 +446,9 @@ def parse_data(item, i, geolocation_subclass, organization_subclass):
             "NERtype": NERtype,  # (list of ORG, LOC, PER or OTHERS)
             "URLs": url_dict,
             "extended_WDtypes": extended_WDtypes,  # list of extended types
-            "explicit_WDtypes": types_list,  # list of extended types
+            "explicit_WDtypes": types_list,  # list of explicit types
             ######################
         },
-        "objects": {"id_entity": i, "entity": entity, "objects": objects},
-        "literals": {"id_entity": i, "entity": entity, "literals": literals},
-        "types": {"id_entity": i, "entity": entity, "types": types},
         "objects": {"id_entity": i, "entity": entity, "objects": objects},
         "literals": {"id_entity": i, "entity": entity, "literals": literals},
         "types": {"id_entity": i, "entity": entity, "types": types},
@@ -458,7 +480,13 @@ def parse_data(item, i, geolocation_subclass, organization_subclass):
                 lit[predicate].append(value)
 
     for key in buffer:
+        if "types_cache" == key:
+            continue
         buffer[key].append(join[key])
+    if "types_cache" in buffer:
+        buffer["types_cache"] += types_cache
+    else:
+        buffer["types_cache"] = types_cache
 
     if len(buffer["items"]) >= BATCH_SIZE:
         flush_buffer(buffer)
@@ -598,7 +626,7 @@ def parse_wikidata_dump():
             pbar.total = round(compressed_file_size / current_average_size)
             pbar.update(1)
 
-            if items_c.find_one({"entity": item["id"]}) is not None:  # Skip if already processed
+            if items_c.find_one({"entity": item["id"]}) is not None:
                 continue
             parse_data(item, i, geolocation_subclass, organization_subclass)
         except json.decoder.JSONDecodeError:
