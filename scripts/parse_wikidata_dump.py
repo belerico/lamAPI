@@ -2,12 +2,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import argparse
 import asyncio
 import bz2
 import json
 import os
-import sys
-import time
 import traceback
 from collections import Counter
 from datetime import datetime
@@ -18,6 +17,56 @@ from pymongo import MongoClient
 from requests import get
 from SPARQLWrapper import JSON, SPARQLWrapper
 from tqdm import tqdm
+
+BATCH_SIZE = 128  # Number of entities to insert in a single batch
+
+# MongoDB connection setup
+MONGO_ENDPOINT, MONGO_ENDPOINT_PORT = os.environ["MONGO_ENDPOINT"].split(":")
+MONGO_ENDPOINT_PORT = int(MONGO_ENDPOINT_PORT)
+MONGO_ENDPOINT_USERNAME = os.environ["MONGO_INITDB_ROOT_USERNAME"]
+MONGO_ENDPOINT = "localhost"
+MONGO_ENDPOINT_PASSWORD = os.environ["MONGO_INITDB_ROOT_PASSWORD"]
+DB_NAME = f"wikidata17012025"
+
+# Mongo collections
+client = MongoClient(
+    MONGO_ENDPOINT,
+    MONGO_ENDPOINT_PORT,
+    username=MONGO_ENDPOINT_USERNAME,
+    password=MONGO_ENDPOINT_PASSWORD,
+)
+log_c = client[DB_NAME].log
+items_c = client[DB_NAME].items
+objects_c = client[DB_NAME].objects
+literals_c = client[DB_NAME].literals
+types_c = client[DB_NAME].types
+types_cache_c = client[DB_NAME].types_cache
+global_types_id = 0
+c_ref = {
+    "items": items_c,
+    "objects": objects_c,
+    "literals": literals_c,
+    "types": types_c,
+    "types_cache": types_cache_c,
+}
+
+
+BUFFER = {"items": [], "objects": [], "literals": [], "types": []}
+DATATYPES_MAPPINGS = {
+    "external-id": "STRING",
+    "quantity": "NUMBER",
+    "globe-coordinate": "STRING",
+    "string": "STRING",
+    "monolingualtext": "STRING",
+    "commonsMedia": "STRING",
+    "time": "DATETIME",
+    "url": "STRING",
+    "geo-shape": "GEOSHAPE",
+    "math": "MATH",
+    "musical-notation": "MUSICAL_NOTATION",
+    "tabular-data": "TABULAR_DATA",
+}
+DATATYPES = list(set(DATATYPES_MAPPINGS.values()))
 
 
 def create_indexes(db):
@@ -44,77 +93,6 @@ def create_indexes(db):
             db[collection].create_index([("entity", 1), ("category", 1)], unique=True)
         for field in fields:
             db[collection].create_index([(field, 1)])  # 1 for ascending order
-
-
-# Initial Estimation
-initial_estimated_average_size = 800  # Initial average size in bytes, can be adjusted
-BATCH_SIZE = 128  # Number of entities to insert in a single batch
-
-# if len(sys.argv) < 2:
-#     print("Usage: python script_name.py <path_to_wikidata_dump>")
-#     sys.exit(1)
-
-# file_path = sys.argv[1]  # Get the file path from command line argument
-file_path = "/home/lamapi/Downloads/wikidata-20241125-all.json.bz2"
-compressed_file_size = os.path.getsize(file_path)
-initial_total_lines_estimate = compressed_file_size / initial_estimated_average_size
-
-file = bz2.BZ2File(file_path, "r")
-
-# MongoDB connection setup
-MONGO_ENDPOINT, MONGO_ENDPOINT_PORT = os.environ["MONGO_ENDPOINT"].split(":")
-MONGO_ENDPOINT_PORT = int(MONGO_ENDPOINT_PORT)
-MONGO_ENDPOINT_USERNAME = os.environ["MONGO_INITDB_ROOT_USERNAME"]
-MONGO_ENDPOINT = "localhost"
-MONGO_ENDPOINT_PASSWORD = os.environ["MONGO_INITDB_ROOT_PASSWORD"]
-current_date = datetime.now()
-formatted_date = current_date.strftime("%d%m%Y")
-# DB_NAME = f"wikidata{formatted_date}"
-DB_NAME = f"wikidata17012025"
-
-client = MongoClient(
-    MONGO_ENDPOINT,
-    MONGO_ENDPOINT_PORT,
-    username=MONGO_ENDPOINT_USERNAME,
-    password=MONGO_ENDPOINT_PASSWORD,
-)
-log_c = client.wikidata.log
-items_c = client[DB_NAME].items
-objects_c = client[DB_NAME].objects
-literals_c = client[DB_NAME].literals
-types_c = client[DB_NAME].types
-types_cache_c = client[DB_NAME].types_cache
-global_types_id = 0
-
-c_ref = {
-    "items": items_c,
-    "objects": objects_c,
-    "literals": literals_c,
-    "types": types_c,
-    "types_cache": types_cache_c,
-}
-
-create_indexes(client[DB_NAME])
-
-buffer = {"items": [], "objects": [], "literals": [], "types": []}
-
-DATATYPES_MAPPINGS = {
-    "external-id": "STRING",
-    "quantity": "NUMBER",
-    "globe-coordinate": "STRING",
-    "string": "STRING",
-    "monolingualtext": "STRING",
-    "commonsMedia": "STRING",
-    "time": "DATETIME",
-    "url": "STRING",
-    "geo-shape": "GEOSHAPE",
-    "math": "MATH",
-    "musical-notation": "MUSICAL_NOTATION",
-    "tabular-data": "TABULAR_DATA",
-}
-DATATYPES = list(set(DATATYPES_MAPPINGS.values()))
-total_size_processed = 0
-num_entities_processed = 0
 
 
 def update_average_size(new_size):
@@ -164,17 +142,22 @@ def flush_buffer(buffer):
 def get_wikidata_item_tree_item_idsSPARQL(
     root_items, forward_properties=None, backward_properties=None
 ):
-    """Return ids of WikiData items, which are in the tree spanned by the given root items and claims relating them
+    """Return ids of WikiData items, which are in the tree spanned by the given root items
+    and claims relating them
         to other items.
     --------------------------------------------
-    For example, if you have an item with types A, B, and C, and you specify a forward property that applies to type B, the item will
+    For example, if you have an item with types A, B, and C, and you specify a
+    forward property that applies to type B, the item will
     be included in the result because it has type B, even if it also has types A and C
     --------------------------------------------
     :param root_items: iterable[int] One or multiple item entities that are the root elements of the tree
-    :param forward_properties: iterable[int] | None property-claims to follow forward; that is, if root item R has
+    :param forward_properties: iterable[int] | None property-claims to follow forward;
+        that is, if root item R has
         a claim P:I, and P is in the list, the search will branch recursively to item I as well.
-    :param backward_properties: iterable[int] | None property-claims to follow in reverse; that is, if (for a root
-        item R) an item I has a claim P:R, and P is in the list, the search will branch recursively to item I as well.
+    :param backward_properties: iterable[int] | None property-claims to follow in reverse;
+        that is, if (for a root
+        item R) an item I has a claim P:R, and P is in the list,
+        the search will branch recursively to item I as well.
     :return: iterable[int]: List with ids of WikiData items in the tree
     """
 
@@ -209,9 +192,7 @@ def get_wikidata_item_tree_item_idsSPARQL(
         try:
             this_id = int(this_id)
             ids.append(this_id)
-            # print(this_id)
         except ValueError:
-            # print("exception")
             continue
     return ids
 
@@ -262,9 +243,7 @@ def retrieve_superclasses(entity_id):
 
     # Set up the SPARQL client
     sparql = SPARQLWrapper(endpoint_url)
-    sparql.addCustomHttpHeader(
-        "User-Agent", "MyApp/1.0 (https://example.com; myemail@example.com)"
-    )
+    sparql.addCustomHttpHeader("User-Agent", "MyApp/1.0 (belo.fede@outlook.com)")
 
     # Execute the query with backoff
     try:
@@ -291,12 +270,11 @@ def retrieve_superclasses(entity_id):
 def parse_data(item, i, geolocation_subclass, organization_subclass):
     global global_types_id
 
+    category = "entity"
     entity = item["id"]
     labels = item.get("labels", {})
     aliases = item.get("aliases", {})
-    english_label = labels.get("en", {}).get("value", "")
     description = item.get("descriptions", {}).get("en", {})
-    category = "entity"
     sitelinks = item.get("sitelinks", {})
     popularity = len(sitelinks) if len(sitelinks) > 0 else 1
 
@@ -335,7 +313,7 @@ def parse_data(item, i, geolocation_subclass, organization_subclass):
     # All items with the statement is instance of (P31) human (Q5) are classiﬁed as person.
 
     NERtype = []
-    extended_WDtypes = []
+    extended_types = []
     types_list = []
 
     if item.get("type") == "item" and "claims" in item:
@@ -387,44 +365,57 @@ def parse_data(item, i, geolocation_subclass, organization_subclass):
     for el in types_list:
         type_ = types_cache_c.find_one({"entity": el})
         if type_ is not None:
-            retrieved_types = type_["extended_WDtypes"]
+            retrieved_types = None
+            try:
+                retrieved_types = type_["extended_types"]
+            except KeyError:
+                retrieved_types = type_["extended_WDtypes"]
+            if retrieved_types is None:
+                print(f"Error: {el} not found in types_cache. Retrieving types...")
+                retrieved_types = retrieve_superclasses(el)
+                types_cache.append(
+                    {
+                        "id_type": global_types_id,
+                        "entity": el,
+                        "extended_types": retrieved_types,
+                    }
+                )
+                global_types_id += 1
         else:
             retrieved_types = retrieve_superclasses(el)
             types_cache.append(
                 {
                     "id_type": global_types_id,
                     "entity": el,
-                    "extended_WDtypes": retrieved_types,
+                    "extended_types": retrieved_types,
                 }
             )
             global_types_id += 1
         total += retrieved_types
-    extended_WDtypes = list(set(total))
+    extended_types = list(set(total))
 
     ################################################################
     # URL EXTRACTION
 
+    url_dict = {}
+    url_dict["wikidata"] = "https://www.wikidata.org/wiki/" + item["id"]
     try:
         lang = labels.get("en", {}).get("language", "")
-        tmp = {}
-        tmp["WD_id"] = item["id"]
-        tmp["WP_id"] = labels.get("en", {}).get("value", "")
-
-        url_dict = {}
-        url_dict["wikidata"] = "http://www.wikidata.org/wiki/" + tmp["WD_id"]
+        title = sitelinks["enwiki"]["title"]
         url_dict["wikipedia"] = (
-            "http://"
-            + lang
-            + ".wikipedia.org/wiki/"
-            + sitelinks["enwiki"]["title"].replace(" ", "_")
+            "https://" + lang + ".wikipedia.org/wiki/" + title.replace(" ", "_")
         )
-        url_dict["dbpedia"] = "http://dbpedia.org/resource/" + sitelinks["enwiki"][
-            "title"
-        ].replace(" ", "_")
-
-    except Exception as e:
-        # print("Error in URL extraction")
-        pass
+    except KeyError:
+        try:
+            sitelink_lang = list(sitelinks.keys())[0]
+            sitelink = sitelinks[sitelink_lang]
+            lang = sitelink_lang.split("wiki")[0]
+            title = sitelink["title"]
+            url_dict["wikipedia"] = (
+                "https://" + lang + ".wikipedia.org/wiki/" + title.replace(" ", "_")
+            )
+        except Exception:
+            url_dict["wikipedia"] = ""
 
     ################################################################
 
@@ -443,10 +434,10 @@ def parse_data(item, i, geolocation_subclass, organization_subclass):
             "kind": category,  # kind (entity, type or predicate, disambiguation or category)
             ######################
             # new updates
-            "NERtype": NERtype,  # (list of ORG, LOC, PER or OTHERS)
-            "URLs": url_dict,
-            "extended_WDtypes": extended_WDtypes,  # list of extended types
-            "explicit_WDtypes": types_list,  # list of explicit types
+            "ner_types": NERtype,  # (list of ORG, LOC, PER or OTHERS)
+            "urls": url_dict,
+            "extended_types": extended_types,  # list of extended types
+            "explicit_types": types_list,  # list of explicit types
             ######################
         },
         "objects": {"id_entity": i, "entity": entity, "objects": objects},
@@ -458,43 +449,41 @@ def parse_data(item, i, geolocation_subclass, organization_subclass):
     for predicate in predicates:
         for obj in predicates[predicate]:
             datatype = obj["mainsnak"]["datatype"]
+            
+            if datatype == "entity-schema":
+                continue
 
             if check_skip(obj, datatype):
                 continue
 
             if datatype == "wikibase-item" or datatype == "wikibase-property":
                 value = obj["mainsnak"]["datavalue"]["value"]["id"]
-
                 if predicate == "P31" or predicate == "P106":
                     types["P31"].append(value)
-
                 if value not in objects:
                     objects[value] = []
                 objects[value].append(predicate)
             else:
                 value = get_value(obj, datatype)
                 lit = literals[DATATYPES_MAPPINGS[datatype]]
-
                 if predicate not in lit:
                     lit[predicate] = []
                 lit[predicate].append(value)
 
-    for key in buffer:
+    for key in BUFFER:
         if "types_cache" == key:
             continue
-        buffer[key].append(join[key])
-    if "types_cache" in buffer:
-        buffer["types_cache"] += types_cache
+        BUFFER[key].append(join[key])
+    if "types_cache" in BUFFER:
+        BUFFER["types_cache"] += types_cache
     else:
-        buffer["types_cache"] = types_cache
+        BUFFER["types_cache"] = types_cache
 
-    if len(buffer["items"]) >= BATCH_SIZE:
-        flush_buffer(buffer)
+    if len(BUFFER["items"]) >= BATCH_SIZE:
+        flush_buffer(BUFFER)
 
 
-def parse_wikidata_dump():
-    global initial_total_lines_estimate
-
+def parse_wikidata_dump(wikidata_dump_path: str):
     try:
         organization_subclass = get_wikidata_item_tree_item_idsSPARQL(
             [43229], backward_properties=[279]
@@ -615,40 +604,46 @@ def parse_wikidata_dump():
         - set(timeZone_subclass)
     )
 
-    pbar = tqdm(total=initial_total_lines_estimate)
-    for i, line in enumerate(file):
+    wikidata_dump = bz2.BZ2File(wikidata_dump_path, "r")
+    pbar = tqdm(total=os.stat(wikidata_dump_path).st_size)
+    for i, line in enumerate(wikidata_dump):
         try:
             item = json.loads(line[:-2])  # Remove the trailing characters
-            line_size = len(line)
-            current_average_size = update_average_size(line_size)
-
-            # Dynamically update the total based on the current average size
-            pbar.total = round(compressed_file_size / current_average_size)
-            pbar.update(1)
 
             if items_c.find_one({"entity": item["id"]}) is not None:
                 continue
+
+            # Parse the data
+            print(f"Processing item {i}: {item['id']}")
             parse_data(item, i, geolocation_subclass, organization_subclass)
         except json.decoder.JSONDecodeError:
-            continue
+            pass
         except Exception as e:
             traceback_str = traceback.format_exc()
             log_c.insert_one(
                 {"entity": item["id"], "error": str(e), "traceback_str": traceback_str}
             )
+        # Update the progress bar given the size in bytes of the current line
+        pbar.update(len(line))
 
-    if len(buffer["items"]) > 0:
-        flush_buffer(buffer)
+    if len(BUFFER["items"]) > 0:
+        flush_buffer(BUFFER)
 
     pbar.close()
 
 
-def main():
-    parse_wikidata_dump()
-    final_average_size = total_size_processed / num_entities_processed
-    print(f"Final average size of an entity: {final_average_size} bytes")
-    # Optionally store this value for future use
+def main(wikidata_dump_path: str):
+    create_indexes(client[DB_NAME])
+    parse_wikidata_dump(wikidata_dump_path)
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--wikidata_dump_path",
+        help="Path to the Wikidata dump file",
+        default="~/Downloads/wikidata-20250127-all.json.bz2",
+    )
+    args = parser.parse_args()
+    args.wikidata_dump_path = os.path.expanduser(args.wikidata_dump_path)
+    main(args.wikidata_dump_path)
