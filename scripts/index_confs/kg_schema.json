@@ -43,10 +43,10 @@
             "NERtype": {
                 "type": "keyword"
             },
-            "explicit_WDtypes": {
+            "explicit_types": {
                 "type": "keyword"
             },
-            "extended_WDtypes": {
+            "extended_types": {
                 "type": "keyword"
             },
 

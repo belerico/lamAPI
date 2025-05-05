@@ -264,7 +264,7 @@ def get_hard_query_explicit_to_extended(name, value):
                 "bool": {
                     "must": [
                         {"match": {"name": {"query": name, "boost": 2.0}}},
-                        {"terms": {"extended_WDtypes": [value]}}  # Ensures `value` matches at least one in the array
+                        {"terms": {"extended_types": [value]}}  # Ensures `value` matches at least one in the array
                     ]
                 }
             }
@@ -289,9 +289,9 @@ def get_soft_query_explicit_to_extended(name, value):
     should_clause = []
     if value:
         if isinstance(value, list):
-            should_clause = [{"term": {"extended_WDtypes": v}} for v in value]
+            should_clause = [{"term": {"extended_types": v}} for v in value]
         else:
-            should_clause = [{"term": {"extended_WDtypes": value}}]
+            should_clause = [{"term": {"extended_types": value}}]
 
     query_dict = {
         "query": {
@@ -351,7 +351,7 @@ def get_hard_query_ner_to_extended(name, value):
                 "bool": {
                     "must": [
                         {"match": {"name": {"query": name, "boost": 2.0}}},
-                        {"terms": {"extended_WDtypes": [value]}}  # Ensures `value` matches at least one in the array
+                        {"terms": {"extended_types": [value]}}  # Ensures `value` matches at least one in the array
                     ]
                 }
             }
@@ -377,7 +377,7 @@ def get_hard_query_ner_to_extended(name, value):
                         {"match": {"name": {"query": name, "boost": 2.0}}}
                     ],
                     "must_not": [
-                        {"terms": {"extended_WDtypes": ["Q43229", "Q27096213", "Q5"]}}  # Exclude documents mapped to ORG, LOC or PERS (include only OTHERS)
+                        {"terms": {"extended_types": ["Q43229", "Q27096213", "Q5"]}}  # Exclude documents mapped to ORG, LOC or PERS (include only OTHERS)
                     ]
                 }
             }
@@ -403,9 +403,9 @@ def get_soft_query_ner_to_extended(name, value):
     should_clause = []
     if value:
         if isinstance(value, list):
-            should_clause = [{"term": {"extended_WDtypes": v}} for v in value]
+            should_clause = [{"term": {"extended_types": v}} for v in value]
         else:
-            should_clause = [{"term": {"extended_WDtypes": value}}]
+            should_clause = [{"term": {"extended_types": value}}]
         
         query_dict = {
             "query": {
@@ -427,7 +427,7 @@ def get_soft_query_ner_to_extended(name, value):
                     "should": {
                         "bool": {
                             "must_not": [
-                                {"terms": {"extended_WDtypes": ["Q43229", "Q27096213", "Q5"]}}  # Exclude documents mapped to ORG, LOC or PERS (include only OTHERS)
+                                {"terms": {"extended_types": ["Q43229", "Q27096213", "Q5"]}}  # Exclude documents mapped to ORG, LOC or PERS (include only OTHERS)
                             ]
                         }
                     }

@@ -20,8 +20,8 @@ class LookupRetriever:
         types=None,
         kind=None,
         NERtype=None,
-        explicit_WDtypes=None,
-        extended_WDtypes=None,
+        explicit_types=None,
+        extended_types=None,
         language=None,
         ids=None,
         query=None,
@@ -41,8 +41,8 @@ class LookupRetriever:
             types=types,
             kind=kind,
             NERtype=NERtype,
-            explicit_WDtypes=explicit_WDtypes,
-            extended_WDtypes=extended_WDtypes,
+            explicit_types=explicit_types,
+            extended_types=extended_types,
             language=language,
             ids=ids,
             query=query,
@@ -59,8 +59,8 @@ class LookupRetriever:
         types,
         kind,
         NERtype,
-        explicit_WDtypes,
-        extended_WDtypes,
+        explicit_types,
+        extended_types,
         language,
         ids,
         query,
@@ -97,8 +97,8 @@ class LookupRetriever:
                 types=types,
                 kind=kind,
                 NERtype=NERtype,
-                explicit_WDtypes=explicit_WDtypes,
-                extended_WDtypes=extended_WDtypes,
+                explicit_types=explicit_types,
+                extended_types=extended_types,
                 language=language,
             )
             result = self.elastic_retriever.search(query, kg, limit)
@@ -137,8 +137,8 @@ class LookupRetriever:
             "types": types,
             "kind": kind,
             "NERtype": NERtype,            
-            "explicit_WDtypes": explicit_WDtypes,
-            "extended_WDtypes": extended_WDtypes,
+            "explicit_types": explicit_types,
+            "extended_types": extended_types,
             "language": language,
         }
 
@@ -171,8 +171,8 @@ class LookupRetriever:
             types=types,
             kind=kind,
             NERtype=NERtype,
-            explicit_WDtypes=explicit_WDtypes,
-            extended_WDtypes=extended_WDtypes,
+            explicit_types=explicit_types,
+            extended_types=extended_types,
             language=language,
         )
         final_result = []
@@ -259,8 +259,8 @@ class LookupRetriever:
                 ],
                 "kind": entity.get("kind", None),
                 "NERtype": entity.get("NERtype", None),
-                "explicit_WDtypes": entity.get("explicit_WDtypes", None),
-                "extended_WDtypes": entity.get("extended_WDtypes", None),
+                "explicit_types": entity.get("explicit_types", None),
+                "extended_types": entity.get("extended_types", None),
                 "ambiguity_mention": ambiguity_mention,
                 "corrects_tokens": corrects_tokens,
                 "ntoken_mention": ntoken_mention,
@@ -300,8 +300,8 @@ class LookupRetriever:
             "types": body.get("types"),
             "kind": body.get("kind"),
             "NERtype": body.get("NERtype"),
-            "explicit_WDtypes": body.get("explicit_WDtypes"),
-            "extended_WDtypes": body.get("extended_WDtypes"),
+            "explicit_types": body.get("explicit_types"),
+            "extended_types": body.get("extended_types"),
             "language": body.get("language"),
         }
 
@@ -390,7 +390,7 @@ class LookupRetriever:
         return query
 
     def create_query(
-        self, name, fuzzy=False, types=None, kind=None, NERtype=None, explicit_WDtypes=None, extended_WDtypes=None, language=None
+        self, name, fuzzy=False, types=None, kind=None, NERtype=None, explicit_types=None, extended_types=None, language=None
     ):
         # Base query
         query_base = {
@@ -440,40 +440,40 @@ class LookupRetriever:
 ############################################################################################
 ############################################################################################
 
-        if explicit_WDtypes:
+        if explicit_types:
             query_base["query"]["bool"]["must"].append({
                 "terms": {
-                    "explicit_WDtypes": [explicit_WDtypes]
+                    "explicit_types": [explicit_types]
                 }
             })
             
         '''   
         should_clause = []
-        if explicit_WDtypes:
-            if isinstance(explicit_WDtypes, list):
-                should_clause = [{"term": {"explicit_WDtypes": explicit_WDtypes}}]
+        if explicit_types:
+            if isinstance(explicit_types, list):
+                should_clause = [{"term": {"explicit_types": explicit_types}}]
             else:
-                should_clause = [{"term": {"explicit_WDtypes": explicit_WDtypes}}]
+                should_clause = [{"term": {"explicit_types": explicit_types}}]
 
          query_base["query"]["bool"]["should"].append(should_clause)
         '''
 
 ############################################################################################
 ############################################################################################
-        if extended_WDtypes:
+        if extended_types:
             query_base["query"]["bool"]["must"].append({
                 "terms": {
-                    "extended_WDtypes": [extended_WDtypes]
+                    "extended_types": [extended_types]
                 }
             })
             
         '''   
         should_clause = []
-        if extended_WDtypes:
-            if isinstance(extended_WDtypes, list):
-                should_clause = [{"term": {"extended_WDtypes": extended_WDtypes}}]
+        if extended_types:
+            if isinstance(extended_types, list):
+                should_clause = [{"term": {"extended_types": extended_types}}]
             else:
-                should_clause = [{"term": {"extended_WDtypes": extended_WDtypes}}]
+                should_clause = [{"term": {"extended_types": extended_types}}]
 
          query_base["query"]["bool"]["should"].append(should_clause)
         '''

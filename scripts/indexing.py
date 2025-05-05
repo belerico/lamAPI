@@ -156,16 +156,16 @@ def index_data(
         aliases = item.get("aliases", {})
         description = item.get("description", {}).get("value", None)
         NERtype = item.get("NERtype", None)
-        explicit_WDtypes = item.get("explicit_WDtypes", None)
+        explicit_types = item.get("explicit_types", None)
 
-        # Check and log issues with extended_WDtypes
-        extended_WDtypes = item.get("extended_WDtypes", None)
+        # Check and log issues with extended_types
+        extended_types = item.get("extended_types", None)
 
-        # Print NERtype and explicit_WDtypes directly
+        # Print NERtype and explicit_types directly
         # print(f"Entity ID: {id_entity}")
         # print(f"NERtype: {NERtype}")
-        # print(f"explicit_WDtypes: {WD_type}")
-        # print(f"extended_WDtypes: {extended_WDtypes}")
+        # print(f"explicit_types: {WD_type}")
+        # print(f"extended_types: {extended_types}")
 
         types = item.get("types", {}).get("P31", [])
         kind = item.get("kind", None)
@@ -226,8 +226,8 @@ def index_data(
                 "description": description,
                 "kind": kind,
                 "NERtype": NERtype,
-                "explicit_WDtypes": explicit_WDtypes,
-                "extended_WDtypes": extended_WDtypes,
+                "explicit_types": explicit_types,
+                "extended_types": extended_types,
                 "types": " ".join(types),
                 "length": len(name),
                 "ntoken": len(name.split(" ")),
