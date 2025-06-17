@@ -164,7 +164,7 @@ class StreamingProcessor:
             raise ValueError("reader_threads must be 1")
         if processor_threads < 1:
             raise ValueError("processor_threads must be at least 1")
-        
+
         self.reader_threads = reader_threads
         self.processor_threads = processor_threads
         self.block_size = block_size  # 16MB blocks for better throughput
@@ -421,63 +421,69 @@ class StreamingProcessor:
             print("🏁 Writer finished")
 
     def process_stream(self, input_stream, inst_f, sub_f):
-        """Main processing pipeline"""
+        """Main processing pipeline with proper shutdown sequence"""
         print(
-            f"🚀 Starting pipeline: {self.reader_threads} readers, {self.processor_threads} processors"
+            f"🚀 Starting pipeline: {self.reader_threads} readers, "
+            f"{self.processor_threads} processors"
         )
 
-        # Start all workers
-        threads = []
+        reader_threads = []
+        processor_threads = []
 
         # Reader threads
         for i in range(self.reader_threads):
             t = threading.Thread(target=self.reader_worker, args=(input_stream, i))
             t.start()
-            threads.append(t)
+            reader_threads.append(t)
 
-        # Line splitter
-        t = threading.Thread(target=self.line_splitter_worker)
-        t.start()
-        threads.append(t)
+        # Line splitter thread
+        line_splitter_thread = threading.Thread(target=self.line_splitter_worker)
+        line_splitter_thread.start()
 
         # Processor threads
         for i in range(self.processor_threads):
             t = threading.Thread(target=self.processor_worker, args=(i,))
             t.start()
-            threads.append(t)
-            self.processors.append(t)
+            processor_threads.append(t)
 
         # Writer thread
-        t = threading.Thread(target=self.writer_worker, args=(inst_f, sub_f))
-        t.start()
-        threads.append(t)
+        writer_thread = threading.Thread(
+            target=self.writer_worker, args=(inst_f, sub_f)
+        )
+        writer_thread.start()
 
         # Progress monitoring
         self.monitor_progress()
 
-        # Wait for readers to finish
-        print("⏳ Waiting for readers to finish...")
-        for t in threads[: self.reader_threads]:
+        # Phase 1: Wait for readers to finish (no more input data)
+        print("⏳ Phase 1: Waiting for readers to finish...")
+        for t in reader_threads:
             t.join()
+        print("✅ All readers finished")
+
+        # Phase 2: Signal end of reading and wait for line splitter
+        print("⏳ Phase 2: Signaling end of reading...")
         self.stop_reading.set()
+        self.read_queue.put((None, None))  # Signal line splitter to stop
 
-        # Signal end of reading
-        self.read_queue.put((None, None))
+        line_splitter_thread.join()
+        print("✅ Line splitter finished")
 
-        # Wait for processors to finish
-        print("⏳ Waiting for processors to finish...")
-        for t in self.processors:
+        # Phase 3: Wait for processors to finish (no more processing blocks)
+        print("⏳ Phase 3: Waiting for processors to finish...")
+        for t in processor_threads:
             t.join()
+        print("✅ All processors finished")
+
+        # Phase 4: Signal writer to stop and wait
+        print("⏳ Phase 4: Signaling writer to stop...")
         self.stop_processing.set()
+        self.result_queue.put(None)  # Signal writer to stop
 
-        # Signal writer to stop
-        self.result_queue.put(None)
+        writer_thread.join()
+        print("✅ Writer finished")
 
-        # Wait for all threads
-        for t in threads:
-            t.join()
-
-        print("✅ All threads finished")
+        print("🎉 All pipeline stages completed successfully!")
 
     def monitor_progress(self):
         """Monitor and display progress"""
