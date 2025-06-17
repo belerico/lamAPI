@@ -41,7 +41,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 from tqdm import tqdm
 
@@ -79,8 +79,47 @@ class ProcessingResult:
     lines_processed: int
 
 
+@dataclass
+class CheckpointData:
+    """Checkpoint data for resume functionality"""
+
+    last_entity_id: Optional[str]  # Last processed Q-ID (e.g., "Q12345")
+    lines_processed: int
+    entities_processed: int
+    p31_edges_count: int
+    p279_edges_count: int
+    blocks_processed: int
+    checkpoint_time: float
+
+    def to_dict(self):
+        return {
+            "last_entity_id": self.last_entity_id,
+            "lines_processed": self.lines_processed,
+            "entities_processed": self.entities_processed,
+            "p31_edges_count": self.p31_edges_count,
+            "p279_edges_count": self.p279_edges_count,
+            "blocks_processed": self.blocks_processed,
+            "checkpoint_time": self.checkpoint_time,
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        return cls(
+            last_entity_id=data.get("last_entity_id"),
+            lines_processed=data.get("lines_processed", 0),
+            entities_processed=data.get("entities_processed", 0),
+            p31_edges_count=data.get("p31_edges_count", 0),
+            p279_edges_count=data.get("p279_edges_count", 0),
+            blocks_processed=data.get("blocks_processed", 0),
+            checkpoint_time=data.get("checkpoint_time", 0.0),
+        )
+
+
 class BlockProcessor:
     """Processes blocks of lines in parallel"""
+
+    def __init__(self, streaming_processor=None):
+        self.streaming_processor = streaming_processor
 
     def process_block(self, lines: List[str], block_id: int) -> ProcessingResult:
         """Process a block of lines and extract edges - optimized for CPU utilization"""
@@ -88,10 +127,6 @@ class BlockProcessor:
         p31_edges = []
         p279_edges = []
         lines_processed = 0
-
-        # Pre-allocate lists for better performance (Python lists auto-grow)
-        p31_edges = []
-        p279_edges = []
 
         for line in lines:
             lines_processed += 1
@@ -117,7 +152,21 @@ class BlockProcessor:
             if not qid or not qid.startswith("Q"):
                 continue
 
+            # Resume functionality: Skip entities until we reach resume point
+            if self.streaming_processor and self.streaming_processor.skipping_mode:
+                if qid == self.streaming_processor.resume_from_id:
+                    print(f"📍 Resume point reached: {qid}")
+                    self.streaming_processor.skipping_mode = False
+                    # Don't skip this entity, process it
+                else:
+                    continue  # Skip this entity
+
             entities_processed += 1
+
+            # Update last processed ID for checkpointing
+            if self.streaming_processor:
+                self.streaming_processor.last_processed_id = qid
+
             claims = entity.get("claims")
             if not claims:
                 continue
@@ -158,7 +207,13 @@ class StreamingProcessor:
     """High-performance streaming processor with multi-threading"""
 
     def __init__(
-        self, reader_threads=1, processor_threads=8, block_size=16 * 1024 * 1024
+        self,
+        reader_threads=1,
+        processor_threads=8,
+        block_size=16 * 1024 * 1024,
+        resume_from_id=None,
+        checkpoint_file=None,
+        skip_lines=None,
     ):
         if reader_threads != 1:
             raise ValueError("reader_threads must be 1")
@@ -169,6 +224,14 @@ class StreamingProcessor:
         self.processor_threads = processor_threads
         self.block_size = block_size  # 16MB blocks for better throughput
         self.lines_per_block = max(200, 2048 // processor_threads)
+
+        # Resume functionality
+        self.resume_from_id = resume_from_id
+        self.checkpoint_file = checkpoint_file
+        self.skip_lines = skip_lines or 0
+        self.skipping_mode = resume_from_id is not None
+        self.last_processed_id = None
+        self.lines_skipped = 0  # Track how many lines we've skipped
 
         # Larger queues for better pipeline flow and preventing starvation
         self.read_queue = queue.Queue(maxsize=256)  # Much larger buffer for read blocks
@@ -271,8 +334,30 @@ class StreamingProcessor:
                         break
 
                     # Add lines to buffer
-                    line_buffer.extend(lines)
-                    self.stats["lines_read"] += len(lines)
+                    if self.skip_lines > 0:
+                        # Skip lines mode - filter out lines until we've skipped enough
+                        lines_to_add = []
+                        for line in lines:
+                            if self.lines_skipped < self.skip_lines:
+                                self.lines_skipped += 1
+                            else:
+                                lines_to_add.append(line)
+
+                        if lines_to_add:
+                            line_buffer.extend(lines_to_add)
+                            self.stats["lines_read"] += len(lines_to_add)
+
+                        # Update total lines read counter (including skipped)
+                        if self.lines_skipped < self.skip_lines:
+                            continue  # Don't process any blocks yet
+                        elif self.lines_skipped == self.skip_lines and lines_to_add:
+                            print(
+                                f"✅ Finished skipping {self.skip_lines:,} lines, starting processing..."
+                            )
+                    else:
+                        # Normal mode - add all lines
+                        line_buffer.extend(lines)
+                        self.stats["lines_read"] += len(lines)
 
                     # Split into processing blocks - batch processing for efficiency
                     while len(line_buffer) >= self.lines_per_block:
@@ -324,7 +409,7 @@ class StreamingProcessor:
     def processor_worker(self, worker_id):
         """Worker that processes line blocks"""
         print(f"⚙️ Processor {worker_id} started")
-        processor = BlockProcessor()
+        processor = BlockProcessor(streaming_processor=self)
 
         try:
             while True:
@@ -485,6 +570,42 @@ class StreamingProcessor:
 
         print("🎉 All pipeline stages completed successfully!")
 
+    def save_checkpoint(self):
+        """Save current progress to checkpoint file"""
+        if not self.checkpoint_file:
+            return
+
+        checkpoint_data = CheckpointData(
+            last_entity_id=self.last_processed_id,
+            lines_processed=self.stats["lines_read"],
+            entities_processed=self.stats["entities_processed"],
+            p31_edges_count=self.stats["p31_edges"],
+            p279_edges_count=self.stats["p279_edges"],
+            blocks_processed=self.stats["blocks_processed"],
+            checkpoint_time=time.time(),
+        )
+
+        try:
+            with open(self.checkpoint_file, "w") as f:
+                json.dump(checkpoint_data.to_dict(), f, indent=2)
+            print(f"💾 Checkpoint saved: {self.checkpoint_file}")
+        except Exception as e:
+            print(f"❌ Failed to save checkpoint: {e}")
+
+    @staticmethod
+    def load_checkpoint(checkpoint_file):
+        """Load checkpoint data from file"""
+        try:
+            with open(checkpoint_file, "r") as f:
+                data = json.load(f)
+            return CheckpointData.from_dict(data)
+        except FileNotFoundError:
+            print(f"📁 No checkpoint file found: {checkpoint_file}")
+            return None
+        except Exception as e:
+            print(f"❌ Failed to load checkpoint: {e}")
+            return None
+
     def monitor_progress(self):
         """Monitor and display progress"""
         pbar = tqdm(
@@ -495,9 +616,12 @@ class StreamingProcessor:
 
         def update_progress():
             update_count = 0
+            last_checkpoint_time = time.time()
+
             while not self.stop_processing.is_set():
                 try:
                     current_entities = self.stats["entities_processed"]
+                    current_time = time.time()
                     pbar.n = current_entities
 
                     # Always update postfix with current stats
@@ -514,8 +638,24 @@ class StreamingProcessor:
                         f"proc_q={proc_q_size}/{self.process_queue.maxsize}, "
                         f"res_q={result_q_size}/{self.result_queue.maxsize}"
                     )
+
+                    # Add resume info if skipping
+                    if self.skipping_mode:
+                        postfix_data += f", skipping_to={self.resume_from_id}"
+                    elif self.skip_lines > 0 and self.lines_skipped < self.skip_lines:
+                        postfix_data += (
+                            f", skipping_lines={self.lines_skipped}/{self.skip_lines}"
+                        )
+                    elif self.last_processed_id:
+                        postfix_data += f", last_id={self.last_processed_id}"
+
                     pbar.set_postfix_str(postfix_data)
                     pbar.refresh()
+
+                    # Periodic checkpoint saving (every 5 minutes)
+                    if current_time - last_checkpoint_time > 300:  # 5 minutes
+                        self.save_checkpoint()
+                        last_checkpoint_time = current_time
 
                     time.sleep(1)
                 except Exception as e:
@@ -576,9 +716,57 @@ def main():
         default=16 * 1024 * 1024,
         help="Read block size in bytes (default: 16MB)",
     )
+    p.add_argument(
+        "--resume-from",
+        "-r",
+        type=str,
+        help="Resume processing from specific entity ID (e.g., Q12345)",
+    )
+    p.add_argument(
+        "--checkpoint-file",
+        "-c",
+        type=str,
+        default="extract_checkpoint.json",
+        help="Checkpoint file for resume functionality (default: extract_checkpoint.json)",
+    )
+    p.add_argument(
+        "--skip-lines",
+        "-s",
+        type=int,
+        help="Skip first N lines (alternative to entity-based resume)",
+    )
 
     args = p.parse_args()
     args.reader_threads = 1  # Reader threads are always 1 for this design
+
+    # Resume functionality
+    resume_from_id = None
+    checkpoint_data = None
+
+    # Check for checkpoint file first
+    if os.path.exists(args.checkpoint_file):
+        checkpoint_data = StreamingProcessor.load_checkpoint(args.checkpoint_file)
+        if checkpoint_data and checkpoint_data.last_entity_id:
+            resume_from_id = checkpoint_data.last_entity_id
+            print(f"📂 Found checkpoint: Resume from {resume_from_id}")
+            print(
+                f"📊 Previous progress: {checkpoint_data.entities_processed:,} entities, "
+                f"{checkpoint_data.p31_edges_count:,} P31 edges, "
+                f"{checkpoint_data.p279_edges_count:,} P279 edges"
+            )
+
+    # Command line resume override
+    if args.resume_from:
+        resume_from_id = args.resume_from
+        print(f"🔄 Manual resume from: {resume_from_id}")
+
+    # Line-based skip (simple alternative)
+    if args.skip_lines:
+        print(f"⏭️ Will skip first {args.skip_lines:,} lines")
+        if resume_from_id:
+            print(
+                f"⚠️ Both --skip-lines and entity resume specified. Entity resume takes precedence."
+            )
 
     print(f"🎯 Configuration:")
     print(f"   Reader threads: {args.reader_threads}")
@@ -587,16 +775,27 @@ def main():
     print(f"   Lines per block: {min(200, 2048 // args.processor_threads)}")
     print(f"   JSON library: {JSON_LIBRARY}")
     print(f"   Input: {'stdin (pbzip2)' if args.stdin_json else args.input}")
+    print(f"   Resume from: {resume_from_id or 'Beginning'}")
+    print(f"   Skip lines: {args.skip_lines or 0:,}")
+    print(f"   Checkpoint file: {args.checkpoint_file}")
     print(f"   Total CPU cores: {cpu_count}")
     print(
         f"   Expected CPU utilization: ~{min(100, (args.reader_threads + args.processor_threads + 2) * 100 // cpu_count)}%"
     )
 
-    # Open output files
+    # Open output files (append mode if resuming from any method)
+    file_mode = "a" if (resume_from_id or args.skip_lines) else "w"
+    if file_mode == "a":
+        print(f"📄 Output files will be opened in APPEND mode")
+    else:
+        print(f"📄 Output files will be opened in WRITE mode (overwrite)")
+
     inst_f = open(
-        args.output_instance, "w", encoding="utf-8", buffering=2 * 1024 * 1024
+        args.output_instance, file_mode, encoding="utf-8", buffering=2 * 1024 * 1024
     )
-    sub_f = open(args.output_subclass, "w", encoding="utf-8", buffering=2 * 1024 * 1024)
+    sub_f = open(
+        args.output_subclass, file_mode, encoding="utf-8", buffering=2 * 1024 * 1024
+    )
 
     # Choose input source
     if args.stdin_json:
@@ -604,11 +803,14 @@ def main():
     else:
         input_stream = bz2.open(args.input, "rt", encoding="utf-8")
 
-    # Create and run processor
+    # Create and run processor with resume capability
     processor = StreamingProcessor(
         reader_threads=args.reader_threads,
         processor_threads=args.processor_threads,
         block_size=args.block_size,
+        resume_from_id=resume_from_id,
+        checkpoint_file=args.checkpoint_file,
+        skip_lines=args.skip_lines,
     )
 
     start_time = time.time()
@@ -621,6 +823,9 @@ def main():
 
         inst_f.close()
         sub_f.close()
+
+        # Save final checkpoint
+        processor.save_checkpoint()
 
     # Final statistics
     elapsed = time.time() - start_time
@@ -635,6 +840,8 @@ def main():
     print(f"📊 P31 (instance-of) edges: {stats['p31_edges']:,}")
     print(f"📊 P279 (subclass-of) edges: {stats['p279_edges']:,}")
     print(f"📊 Blocks processed: {stats['blocks_processed']:,}")
+    if processor.last_processed_id:
+        print(f"📍 Last processed entity: {processor.last_processed_id}")
 
     if elapsed > 0:
         print(
@@ -645,6 +852,7 @@ def main():
     print(f"📝 Output files:")
     print(f"   Instance-of: {args.output_instance}")
     print(f"   Subclass-of: {args.output_subclass}")
+    print(f"💾 Checkpoint file: {args.checkpoint_file}")
     print(f"=" * 60)
 
     if args.stdin_json:
