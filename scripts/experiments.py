@@ -9,7 +9,9 @@ import json
 import aiohttp
 import asyncio
 import backoff
-from tqdm.asyncio import tqdm_asyncio  # Optional: Use asyncio-compatible progress bars if available
+from tqdm.asyncio import (
+    tqdm_asyncio,
+)  # Optional: Use asyncio-compatible progress bars if available
 
 
 R1_json_file_path = "/home/lamapi/lamAPI/data/Downloads/Downloads/Downloads/_Round1/R1_NER_query_type.json"
@@ -22,9 +24,11 @@ R1_json_file_path = "/home/lamapi/lamAPI/data/Downloads/Downloads/Downloads/_Rou
 with open(R1_json_file_path, "r") as file:
     R1_explicit_type = json.load(file)
 
-R1_tables_path = "/home/lamapi/lamAPI/data/Downloads/Downloads/Downloads/Round1_T2D/tables/"
-R1_cea_file = '/home/lamapi/lamAPI/data/Downloads/Downloads/Downloads/Round1_T2D/gt/CEA_Round1_gt_WD.csv'
-R1_cta_file = '/home/lamapi/lamAPI/data/Downloads/Downloads/Downloads/Round1_T2D/gt/CTA_Round1_gt.csv'
+R1_tables_path = (
+    "/home/lamapi/lamAPI/data/Downloads/Downloads/Downloads/Round1_T2D/tables/"
+)
+R1_cea_file = "/home/lamapi/lamAPI/data/Downloads/Downloads/Downloads/Round1_T2D/gt/CEA_Round1_gt_WD.csv"
+R1_cta_file = "/home/lamapi/lamAPI/data/Downloads/Downloads/Downloads/Round1_T2D/gt/CTA_Round1_gt.csv"
 ################################
 
 R3_json_file_path = "/home/lamapi/lamAPI/data/Downloads/Downloads/Downloads/_Round3/R3_NER_query_type.json"
@@ -37,27 +41,41 @@ R3_json_file_path = "/home/lamapi/lamAPI/data/Downloads/Downloads/Downloads/_Rou
 with open(R3_json_file_path, "r") as file:
     R3_explicit_type = json.load(file)
 
-R3_tables_path = "/home/lamapi/lamAPI/data/Downloads/Downloads/Downloads/Round3_2019/tables/"
-R3_cea_file = '/home/lamapi/lamAPI/data/Downloads/Downloads/Downloads/Round3_2019/gt/CEA_Round3_gt_WD.csv'
-R3_cta_file = '/home/lamapi/lamAPI/data/Downloads/Downloads/Downloads/Round3_2019/gt/CTA_Round3_gt.csv'
+R3_tables_path = (
+    "/home/lamapi/lamAPI/data/Downloads/Downloads/Downloads/Round3_2019/tables/"
+)
+R3_cea_file = "/home/lamapi/lamAPI/data/Downloads/Downloads/Downloads/Round3_2019/gt/CEA_Round3_gt_WD.csv"
+R3_cta_file = "/home/lamapi/lamAPI/data/Downloads/Downloads/Downloads/Round3_2019/gt/CTA_Round3_gt.csv"
 ##############################
 
-R4_json_file_path = "/home/lamapi/lamAPI/data/Downloads/Downloads/_Round4/R4_NER_query_type.json"
+R4_json_file_path = (
+    "/home/lamapi/lamAPI/data/Downloads/Downloads/_Round4/R4_NER_query_type.json"
+)
 
 with open(R4_json_file_path, "r") as file:
     R4_ner_type = json.load(file)
 
-R4_json_file_path = "/home/lamapi/lamAPI/data/Downloads/Downloads/_Round4/R4_WD_query_type.json"
+R4_json_file_path = (
+    "/home/lamapi/lamAPI/data/Downloads/Downloads/_Round4/R4_WD_query_type.json"
+)
 
 with open(R4_json_file_path, "r") as file:
     R4_explicit_type = json.load(file)
 
-R4_tables_path = "/home/lamapi/lamAPI/data/Downloads/Downloads/Downloads/Round4_2020/tables/"
-R4_cea_file = '/home/lamapi/lamAPI/data/Downloads/Downloads/Downloads/Round4_2020/gt/cea.csv'
-R4_cta_file = '/home/lamapi/lamAPI/data/Downloads/Downloads/Downloads/Round4_2020/gt/cta.csv'
+R4_tables_path = (
+    "/home/lamapi/lamAPI/data/Downloads/Downloads/Downloads/Round4_2020/tables/"
+)
+R4_cea_file = (
+    "/home/lamapi/lamAPI/data/Downloads/Downloads/Downloads/Round4_2020/gt/cea.csv"
+)
+R4_cta_file = (
+    "/home/lamapi/lamAPI/data/Downloads/Downloads/Downloads/Round4_2020/gt/cta.csv"
+)
 ##############################
 
-HTR2_json_file_path = "/home/lamapi/lamAPI/data/Downloads/_HTR2/HTR2_NER_query_type.json"
+HTR2_json_file_path = (
+    "/home/lamapi/lamAPI/data/Downloads/_HTR2/HTR2_NER_query_type.json"
+)
 
 with open(HTR2_json_file_path, "r") as file:
     HTR2_ner_type = json.load(file)
@@ -68,59 +86,86 @@ with open(HTR2_json_file_path, "r") as file:
     HTR2_explicit_type = json.load(file)
 
 HTR2_tables_path = "/home/lamapi/lamAPI/data/Downloads/HardTablesR2/tables/"
-HTR2_cea_file = '/home/lamapi/lamAPI/data/Downloads/HardTablesR2/gt/cea.csv'
-HTR2_cta_file = '/home/lamapi/lamAPI/data/Downloads/HardTablesR2/gt/cta.csv'
+HTR2_cea_file = "/home/lamapi/lamAPI/data/Downloads/HardTablesR2/gt/cea.csv"
+HTR2_cta_file = "/home/lamapi/lamAPI/data/Downloads/HardTablesR2/gt/cta.csv"
 ##############################
 
-HTR3_json_file_path = "/home/lamapi/lamAPI/data/Downloads/Downloads/_HTR3/HTR3_NER_query_type.json"
+HTR3_json_file_path = (
+    "/home/lamapi/lamAPI/data/Downloads/Downloads/_HTR3/HTR3_NER_query_type.json"
+)
 
 with open(HTR3_json_file_path, "r") as file:
     HTR3_ner_type = json.load(file)
 
-HTR3_json_file_path = "/home/lamapi/lamAPI/data/Downloads/Downloads/_HTR3/HTR3_WD_query_type.json"
+HTR3_json_file_path = (
+    "/home/lamapi/lamAPI/data/Downloads/Downloads/_HTR3/HTR3_WD_query_type.json"
+)
 
 with open(HTR3_json_file_path, "r") as file:
     HTR3_explicit_type = json.load(file)
 
 HTR3_tables_path = "/home/lamapi/lamAPI/data/Downloads/Downloads/HardTablesR3/tables/"
-HTR3_cea_file = '/home/lamapi/lamAPI/data/Downloads/Downloads/HardTablesR3/gt/cea.csv'
-HTR3_cta_file = '/home/lamapi/lamAPI/data/Downloads/Downloads/HardTablesR3/gt/cta.csv'
+HTR3_cea_file = "/home/lamapi/lamAPI/data/Downloads/Downloads/HardTablesR3/gt/cea.csv"
+HTR3_cta_file = "/home/lamapi/lamAPI/data/Downloads/Downloads/HardTablesR3/gt/cta.csv"
 #############################
-R42T_json_file_path = "/home/lamapi/lamAPI/data/Downloads/Downloads/_2TR4/2T_NER_query_type.json"
+R42T_json_file_path = (
+    "/home/lamapi/lamAPI/data/Downloads/Downloads/_2TR4/2T_NER_query_type.json"
+)
 
 with open(R42T_json_file_path, "r") as file:
     R42T_ner_type = json.load(file)
 
-R42T_json_file_path = "/home/lamapi/lamAPI/data/Downloads/Downloads/_2TR4/2T_WD_query_type.json"
+R42T_json_file_path = (
+    "/home/lamapi/lamAPI/data/Downloads/Downloads/_2TR4/2T_WD_query_type.json"
+)
 
 with open(R42T_json_file_path, "r") as file:
     R42T_explicit_type = json.load(file)
 
 R42T_tables_path = "/home/lamapi/lamAPI/data/Downloads/Downloads/2T_Round4/tables/"
-R42T_cea_file = '/home/lamapi/lamAPI/data/Downloads/Downloads/2T_Round4/gt/cea.csv'
-R42T_cta_file = '/home/lamapi/lamAPI/data/Downloads/Downloads/2T_Round4/gt/cta.csv'
+R42T_cea_file = "/home/lamapi/lamAPI/data/Downloads/Downloads/2T_Round4/gt/cea.csv"
+R42T_cta_file = "/home/lamapi/lamAPI/data/Downloads/Downloads/2T_Round4/gt/cta.csv"
 ##############################
 
 
-
 # Define lists of table paths and CEA files
-tables_paths = [R1_tables_path, R3_tables_path, R4_tables_path, HTR2_tables_path, HTR3_tables_path, R42T_tables_path]
-cea_files = [R1_cea_file, R3_cea_file, R4_cea_file, HTR2_cea_file, HTR3_cea_file, R42T_cea_file]
-prefix = ['R1', 'R3', 'R4', 'HTR2', 'HTR3', '2T']
+tables_paths = [
+    R1_tables_path,
+    R3_tables_path,
+    R4_tables_path,
+    HTR2_tables_path,
+    HTR3_tables_path,
+    R42T_tables_path,
+]
+cea_files = [
+    R1_cea_file,
+    R3_cea_file,
+    R4_cea_file,
+    HTR2_cea_file,
+    HTR3_cea_file,
+    R42T_cea_file,
+]
+prefix = ["R1", "R3", "R4", "HTR2", "HTR3", "2T"]
 
 
 # Initialize logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
 
 # Function to read CEA file and create dictionaries
 def read_cea_file(cea_file):
     df_cea = pd.read_csv(cea_file, header=None)
-    df_cea["key"] = df_cea[0] + " " + df_cea[1].astype(str) + " " + df_cea[2].astype(str)
+    df_cea["key"] = (
+        df_cea[0] + " " + df_cea[1].astype(str) + " " + df_cea[2].astype(str)
+    )
     df_cea["key_col"] = df_cea[0] + " " + df_cea[2].astype(str)
     cea_values_dict = dict(zip(df_cea["key_col"].values, df_cea[3].values))
     cea_values_dict_cell = dict(zip(df_cea["key"].values, df_cea[3].values))
     cea_keys_set = set(df_cea["key"].values)
     return cea_keys_set, cea_values_dict, cea_values_dict_cell
+
 
 # Function to process a single table file
 def process_table_file(table_file, cea_keys_set, cea_values_dict_cell):
@@ -134,14 +179,17 @@ def process_table_file(table_file, cea_keys_set, cea_values_dict_cell):
                 key = f"{table_name} {row+1} {col}"
                 if key in cea_keys_set:
                     cell_value = df.iloc[row, col]
-                    qid = cea_values_dict_cell[key].split('/')[-1]  # Extract the QID from the URL
+                    qid = cea_values_dict_cell[key].split("/")[
+                        -1
+                    ]  # Extract the QID from the URL
                     qid_to_value[cell_value] = qid
                     break  # Exit inner loop early as only one match per row/col is needed
-        
+
         return qid_to_value
     except Exception as e:
         logging.error(f"Error processing {table_file}: {e}")
         return {}
+
 
 # Process each table path and corresponding CEA file
 id_to_name_dicts = {}
@@ -153,24 +201,26 @@ for tables_path, cea_file, name in zip(tables_paths, cea_files, prefix):
     if tables_path == R4_tables_path:
         break
     #########################################
-    
+
     # List of table files in the directory
     table_files = [
         os.path.join(tables_path, table)
         for table in os.listdir(tables_path)
-        if not table.startswith('.')
+        if not table.startswith(".")
     ]
-    
+
     # Initialize dictionary for this prefix
     id_to_name_dicts[name + "_id_to_name"] = {}
-    
+
     for table_file in tqdm(table_files, desc=f"Processing tables for {name}"):
-        local_key_to_cell = process_table_file(table_file, cea_keys_set, cea_values_dict_cell)
+        local_key_to_cell = process_table_file(
+            table_file, cea_keys_set, cea_values_dict_cell
+        )
         id_to_name_dicts[name + "_id_to_name"].update(local_key_to_cell)
 
 
 def get_hard_query_ner_to_ner(name, value):
-    name = str(name).replace('"', ' ')
+    name = str(name).replace('"', " ")
     if value is not None:
 
         query_dict = {
@@ -178,27 +228,30 @@ def get_hard_query_ner_to_ner(name, value):
                 "bool": {
                     "must": [
                         {"match": {"name": {"query": name, "boost": 2.0}}},
-                        {"terms": {"NERtype": [value]}}  # Ensures `value` matches at least one in the array
+                        {
+                            "terms": {"NERtype": [value]}
+                        },  # Ensures `value` matches at least one in the array
                     ]
                 }
             }
         }
-        
+
         params = {
-            'name': name,
-            'token': 'lamapi_demo_2023',
-            'kg': 'wikidata',
-            'limit': 100,
-            'query': json.dumps(query_dict),  # Convert the query dictionary to a JSON string
-            'sort': [
-                '{"popularity": {"order": "desc"}}'
-            ]
+            "name": name,
+            "token": "lamapi_demo_2023",
+            "kg": "wikidata",
+            "limit": 100,
+            "query": json.dumps(
+                query_dict
+            ),  # Convert the query dictionary to a JSON string
+            "sort": ['{"popularity": {"order": "desc"}}'],
         }
-    
+
     return params
 
+
 def get_soft_query_ner_to_ner(name, value):
-    name = str(name).replace('"', ' ')  # Replace double quotes with spaces
+    name = str(name).replace('"', " ")  # Replace double quotes with spaces
 
     should_clause = []
     if value:
@@ -210,53 +263,59 @@ def get_soft_query_ner_to_ner(name, value):
     query_dict = {
         "query": {
             "bool": {
-                "must": [
-                    {"match": {"name": {"query": name, "boost": 2.0}}}
-                ],
-                "should": should_clause
+                "must": [{"match": {"name": {"query": name, "boost": 2.0}}}],
+                "should": should_clause,
             }
         }
     }
 
     params = {
-        'name': name,
-        'token': 'lamapi_demo_2023',
-        'kg': 'wikidata',
-        'limit': 100,
-        'query': json.dumps(query_dict),  # Compact JSON
-        'sort': ['{"popularity": {"order": "desc"}}']
+        "name": name,
+        "token": "lamapi_demo_2023",
+        "kg": "wikidata",
+        "limit": 100,
+        "query": json.dumps(query_dict),  # Compact JSON
+        "sort": ['{"popularity": {"order": "desc"}}'],
     }
 
     return params
 
 
-#candidate_types_ner = [R1_ner_type, R3_ner_type, R4_ner_type, HTR2_ner_type, HTR3_ner_type, R42T_ner_type]
+# candidate_types_ner = [R1_ner_type, R3_ner_type, R4_ner_type, HTR2_ner_type, HTR3_ner_type, R42T_ner_type]
 candidate_types_ner = [R1_ner_type, R3_ner_type]
-prefix = ['R1', 'R3']
+prefix = ["R1", "R3"]
 queries_ner_to_ner_HARD = {}
-for (file_name, id_name), db_name, ner_type in zip(tqdm(id_to_name_dicts.items()), prefix, candidate_types_ner):
+for (file_name, id_name), db_name, ner_type in zip(
+    tqdm(id_to_name_dicts.items()), prefix, candidate_types_ner
+):
     tmp_query = []
-    for name, id in tqdm(id_name.items(), desc = f"HARD ner_to_ner: processing {file_name}"):
+    for name, id in tqdm(
+        id_name.items(), desc=f"HARD ner_to_ner: processing {file_name}"
+    ):
         if id in ner_type:
-            types_list = ner_type[id]      
+            types_list = ner_type[id]
             query = get_hard_query_ner_to_ner(name, types_list)
             tmp_query.append((query, id, types_list))
     queries_ner_to_ner_HARD[db_name] = tmp_query
 
 
 queries_ner_to_ner_SOFT = {}
-for (file_name, id_name), db_name, ner_type in zip(tqdm(id_to_name_dicts.items()), prefix, candidate_types_ner):
+for (file_name, id_name), db_name, ner_type in zip(
+    tqdm(id_to_name_dicts.items()), prefix, candidate_types_ner
+):
     tmp_query = []
-    for name, id in tqdm(id_name.items(), desc = f"SOFT ner_to_ner: processing {file_name}"):
+    for name, id in tqdm(
+        id_name.items(), desc=f"SOFT ner_to_ner: processing {file_name}"
+    ):
         if id in ner_type:
-            types_list = ner_type[id]      
+            types_list = ner_type[id]
             query = get_soft_query_ner_to_ner(name, types_list)
             tmp_query.append((query, id, types_list))
     queries_ner_to_ner_SOFT[db_name] = tmp_query
 
 
 def get_hard_query_explicit_to_extended(name, value):
-    name = str(name).replace('"', ' ')
+    name = str(name).replace('"', " ")
     if value is not None:
 
         query_dict = {
@@ -264,27 +323,30 @@ def get_hard_query_explicit_to_extended(name, value):
                 "bool": {
                     "must": [
                         {"match": {"name": {"query": name, "boost": 2.0}}},
-                        {"terms": {"extended_types": [value]}}  # Ensures `value` matches at least one in the array
+                        {
+                            "terms": {"extended_types": [value]}
+                        },  # Ensures `value` matches at least one in the array
                     ]
                 }
             }
         }
-        
+
         params = {
-            'name': name,
-            'token': 'lamapi_demo_2023',
-            'kg': 'wikidata',
-            'limit': 100,
-            'query': json.dumps(query_dict),  # Convert the query dictionary to a JSON string
-            'sort': [
-                '{"popularity": {"order": "desc"}}'
-            ]
+            "name": name,
+            "token": "lamapi_demo_2023",
+            "kg": "wikidata",
+            "limit": 100,
+            "query": json.dumps(
+                query_dict
+            ),  # Convert the query dictionary to a JSON string
+            "sort": ['{"popularity": {"order": "desc"}}'],
         }
-    
+
     return params
 
+
 def get_soft_query_explicit_to_extended(name, value):
-    name = str(name).replace('"', ' ')  # Replace double quotes with spaces
+    name = str(name).replace('"', " ")  # Replace double quotes with spaces
 
     should_clause = []
     if value:
@@ -296,54 +358,59 @@ def get_soft_query_explicit_to_extended(name, value):
     query_dict = {
         "query": {
             "bool": {
-                "must": [
-                    {"match": {"name": {"query": name, "boost": 2.0}}}
-                ],
-                "should": should_clause
+                "must": [{"match": {"name": {"query": name, "boost": 2.0}}}],
+                "should": should_clause,
             }
         }
     }
 
     params = {
-        'name': name,
-        'token': 'lamapi_demo_2023',
-        'kg': 'wikidata',
-        'limit': 100,
-        'query': json.dumps(query_dict),  # Compact JSON
-        'sort': ['{"popularity": {"order": "desc"}}']
+        "name": name,
+        "token": "lamapi_demo_2023",
+        "kg": "wikidata",
+        "limit": 100,
+        "query": json.dumps(query_dict),  # Compact JSON
+        "sort": ['{"popularity": {"order": "desc"}}'],
     }
 
     return params
 
 
-#candidate_types_ner = [R1_explicit_type, R3_explicit_type, R4_explicit_type, HTR2_explicit_type, HTR3_explicit_type, R42T_explicit_type]
+# candidate_types_ner = [R1_explicit_type, R3_explicit_type, R4_explicit_type, HTR2_explicit_type, HTR3_explicit_type, R42T_explicit_type]
 candidate_types_explicit = [R1_explicit_type, R3_explicit_type]
-prefix = ['R1', 'R3']
+prefix = ["R1", "R3"]
 queries_explicit_to_extended_HARD = {}
-for (file_name, id_name), db_name, explicit_type in zip(tqdm(id_to_name_dicts.items()), prefix, candidate_types_explicit):
+for (file_name, id_name), db_name, explicit_type in zip(
+    tqdm(id_to_name_dicts.items()), prefix, candidate_types_explicit
+):
     tmp_query = []
-    for name, id in tqdm(id_name.items(), desc = f"HARD explicit_to_extended: processing {file_name}"):
+    for name, id in tqdm(
+        id_name.items(), desc=f"HARD explicit_to_extended: processing {file_name}"
+    ):
         if id in explicit_type:
-            types_list = explicit_type[id]      
+            types_list = explicit_type[id]
             query = get_hard_query_explicit_to_extended(name, types_list)
             tmp_query.append((query, id, types_list))
     queries_explicit_to_extended_HARD[db_name] = tmp_query
 
 
 queries_explicit_to_extended_SOFT = {}
-for (file_name, id_name), db_name, explicit_type in zip(tqdm(id_to_name_dicts.items()), prefix, candidate_types_explicit):
+for (file_name, id_name), db_name, explicit_type in zip(
+    tqdm(id_to_name_dicts.items()), prefix, candidate_types_explicit
+):
     tmp_query = []
-    for name, id in tqdm(id_name.items(), desc = f"SOFT explicit_to_extended: processing {file_name}"):
+    for name, id in tqdm(
+        id_name.items(), desc=f"SOFT explicit_to_extended: processing {file_name}"
+    ):
         if id in explicit_type:
-            types_list = explicit_type[id]      
+            types_list = explicit_type[id]
             query = get_soft_query_explicit_to_extended(name, types_list)
             tmp_query.append((query, id, types_list))
     queries_explicit_to_extended_SOFT[db_name] = tmp_query
 
 
-
 def get_hard_query_ner_to_extended(name, value):
-    name = str(name).replace('"', ' ')
+    name = str(name).replace('"', " ")
     if value is not None:
 
         query_dict = {
@@ -351,54 +418,56 @@ def get_hard_query_ner_to_extended(name, value):
                 "bool": {
                     "must": [
                         {"match": {"name": {"query": name, "boost": 2.0}}},
-                        {"terms": {"extended_types": [value]}}  # Ensures `value` matches at least one in the array
+                        {
+                            "terms": {"extended_types": [value]}
+                        },  # Ensures `value` matches at least one in the array
                     ]
                 }
             }
         }
-        
+
         params = {
-            'name': name,
-            'token': 'lamapi_demo_2023',
-            'kg': 'wikidata',
-            'limit': 100,
-            'query': json.dumps(query_dict),  # Convert the query dictionary to a JSON string
-            'sort': [
-                '{"popularity": {"order": "desc"}}'
-            ]
+            "name": name,
+            "token": "lamapi_demo_2023",
+            "kg": "wikidata",
+            "limit": 100,
+            "query": json.dumps(
+                query_dict
+            ),  # Convert the query dictionary to a JSON string
+            "sort": ['{"popularity": {"order": "desc"}}'],
         }
 
     else:
-        
+
         query_dict = {
             "query": {
                 "bool": {
-                    "must": [
-                        {"match": {"name": {"query": name, "boost": 2.0}}}
-                    ],
+                    "must": [{"match": {"name": {"query": name, "boost": 2.0}}}],
                     "must_not": [
-                        {"terms": {"extended_types": ["Q43229", "Q27096213", "Q5"]}}  # Exclude documents mapped to ORG, LOC or PERS (include only OTHERS)
-                    ]
+                        {
+                            "terms": {"extended_types": ["Q43229", "Q27096213", "Q5"]}
+                        }  # Exclude documents mapped to ORG, LOC or PERS (include only OTHERS)
+                    ],
                 }
             }
         }
 
-        
         params = {
-            'name': name,
-            'token': 'lamapi_demo_2023',
-            'kg': 'wikidata',
-            'limit': 100,
-            'query': json.dumps(query_dict),  # Convert the query dictionary to a JSON string
-            'sort': [
-                '{"popularity": {"order": "desc"}}'
-            ]
+            "name": name,
+            "token": "lamapi_demo_2023",
+            "kg": "wikidata",
+            "limit": 100,
+            "query": json.dumps(
+                query_dict
+            ),  # Convert the query dictionary to a JSON string
+            "sort": ['{"popularity": {"order": "desc"}}'],
         }
-    
+
     return params
 
+
 def get_soft_query_ner_to_extended(name, value):
-    name = str(name).replace('"', ' ')  # Replace double quotes with spaces
+    name = str(name).replace('"', " ")  # Replace double quotes with spaces
 
     should_clause = []
     if value:
@@ -406,14 +475,12 @@ def get_soft_query_ner_to_extended(name, value):
             should_clause = [{"term": {"extended_types": v}} for v in value]
         else:
             should_clause = [{"term": {"extended_types": value}}]
-        
+
         query_dict = {
             "query": {
                 "bool": {
-                    "must": [
-                        {"match": {"name": {"query": name, "boost": 2.0}}}
-                    ],
-                    "should": should_clause
+                    "must": [{"match": {"name": {"query": name, "boost": 2.0}}}],
+                    "should": should_clause,
                 }
             }
         }
@@ -421,48 +488,52 @@ def get_soft_query_ner_to_extended(name, value):
         query_dict = {
             "query": {
                 "bool": {
-                    "must": [
-                        {"match": {"name": {"query": name, "boost": 2.0}}}
-                    ],
+                    "must": [{"match": {"name": {"query": name, "boost": 2.0}}}],
                     "should": {
                         "bool": {
                             "must_not": [
-                                {"terms": {"extended_types": ["Q43229", "Q27096213", "Q5"]}}  # Exclude documents mapped to ORG, LOC or PERS (include only OTHERS)
+                                {
+                                    "terms": {
+                                        "extended_types": ["Q43229", "Q27096213", "Q5"]
+                                    }
+                                }  # Exclude documents mapped to ORG, LOC or PERS (include only OTHERS)
                             ]
                         }
-                    }
+                    },
                 }
             }
         }
 
     params = {
-        'name': name,
-        'token': 'lamapi_demo_2023',
-        'kg': 'wikidata',
-        'limit': 100,
-        'query': json.dumps(query_dict),  # Compact JSON
-        'sort': ['{"popularity": {"order": "desc"}}']
+        "name": name,
+        "token": "lamapi_demo_2023",
+        "kg": "wikidata",
+        "limit": 100,
+        "query": json.dumps(query_dict),  # Compact JSON
+        "sort": ['{"popularity": {"order": "desc"}}'],
     }
 
     return params
 
 
-
 entity_mapping = {
-    'ORG': 'Q43229',
-    'LOC': 'Q27096213',
-    'PERS': 'Q5',
-    'OTHERS':  None    #sistemare qua quello di others ############
+    "ORG": "Q43229",
+    "LOC": "Q27096213",
+    "PERS": "Q5",
+    "OTHERS": None,  # sistemare qua quello di others ############
 }
 
 
-
 queries_ner_to_extended_HARD = {}
-for (file_name, id_name), db_name, explicit_type in zip(tqdm(id_to_name_dicts.items()), prefix, candidate_types_ner):
+for (file_name, id_name), db_name, explicit_type in zip(
+    tqdm(id_to_name_dicts.items()), prefix, candidate_types_ner
+):
     tmp_query = []
-    for name, id in tqdm(id_name.items(), desc = f"HARD ner_to_extended: processing {file_name}"):
+    for name, id in tqdm(
+        id_name.items(), desc=f"HARD ner_to_extended: processing {file_name}"
+    ):
         if id in ner_type:
-            types_list = ner_type[id]  
+            types_list = ner_type[id]
             mapped_type = entity_mapping.get(types_list)
             query = get_hard_query_ner_to_extended(name, mapped_type)
             tmp_query.append((query, id, types_list))
@@ -470,36 +541,45 @@ for (file_name, id_name), db_name, explicit_type in zip(tqdm(id_to_name_dicts.it
 
 
 queries_ner_to_extended_SOFT = {}
-for (file_name, id_name), db_name, explicit_type in zip(tqdm(id_to_name_dicts.items()), prefix, candidate_types_ner):
+for (file_name, id_name), db_name, explicit_type in zip(
+    tqdm(id_to_name_dicts.items()), prefix, candidate_types_ner
+):
     tmp_query = []
-    for name, id in tqdm(id_name.items(), desc = f"SOFT ner_to_extended: processing {file_name}"):
+    for name, id in tqdm(
+        id_name.items(), desc=f"SOFT ner_to_extended: processing {file_name}"
+    ):
         if id in ner_type:
-            types_list = ner_type[id]  
+            types_list = ner_type[id]
             mapped_type = entity_mapping.get(types_list)
             query = get_soft_query_ner_to_extended(name, mapped_type)
             tmp_query.append((query, id, types_list))
     queries_ner_to_extended_SOFT[db_name] = tmp_query
 
 
-
-
 ########################################################################################################
 
 failed_queries = {}
-url = 'http://localhost:5000/lookup/entity-retrieval'
+url = "http://localhost:5000/lookup/entity-retrieval"
+
 
 # Backoff decorator for handling retries with exponential backoff
 @backoff.on_exception(
-    backoff.expo, 
-    (aiohttp.ClientError, aiohttp.http_exceptions.HttpProcessingError, asyncio.TimeoutError), 
-    max_tries=10, 
-    max_time=500
+    backoff.expo,
+    (
+        aiohttp.ClientError,
+        aiohttp.http_exceptions.HttpProcessingError,
+        asyncio.TimeoutError,
+    ),
+    max_tries=10,
+    max_time=500,
 )
 async def fetch(session, url, params, headers, semaphore):
     async with semaphore:
         # Convert all params to str, int, or float
-        #params = {k: (int(v) if isinstance(v, np.integer) else str(v)) for k, v in params.items()}
-        async with session.get(url, params=params, headers=headers, timeout=60) as response:
+        # params = {k: (int(v) if isinstance(v, np.integer) else str(v)) for k, v in params.items()}
+        async with session.get(
+            url, params=params, headers=headers, timeout=60
+        ) as response:
             try:
                 response.raise_for_status()  # Raises an exception for 4XX/5XX status codes
                 return await response.json()
@@ -512,6 +592,8 @@ async def fetch(session, url, params, headers, semaphore):
             except Exception as e:
                 print(f"Unexpected error for params {params}: {str(e)}")
                 return []
+
+
 async def process_item(session, url, id, headers, params, semaphore, pbar):
     try:
         data = await fetch(session, url, params, headers, semaphore)
@@ -525,24 +607,26 @@ async def process_item(session, url, id, headers, params, semaphore, pbar):
 
     num_result = len(data) if data else 0
 
-    
-    #print(f"------------>{eval(params['query'])['query']['bool']['must'][1]} - # candidate: {len(data)}")
+    # print(f"------------>{eval(params['query'])['query']['bool']['must'][1]} - # candidate: {len(data)}")
     if data:
         for item in data:
-            if id == item.get('id'):
-                #print(f"{item.get('name')}: es_score({item.get('es_score', 0)}), pos_score({item.get('pos_score', 0)})-> {item.get('description')}")
+            if id == item.get("id"):
+                # print(f"{item.get('name')}: es_score({item.get('es_score', 0)}), pos_score({item.get('pos_score', 0)})-> {item.get('description')}")
                 asyncio.get_event_loop().call_soon_threadsafe(pbar.update, 1)
-                pos_score = item.get('pos_score', 0)
+                pos_score = item.get("pos_score", 0)
                 if pos_score:
                     mrr_increment = (num_result - (pos_score * num_result)) / num_result
                 else:
-                    mrr_increment = 1 / num_result  # Assume worst case for MRR if pos_score is 0
+                    mrr_increment = (
+                        1 / num_result
+                    )  # Assume worst case for MRR if pos_score is 0
                 return mrr_increment, 1
 
     return 0, 0
 
-async def main(queries, url, pbar, failed_queries,db_name,query_group_name):
-    headers = {'accept': 'application/json'}
+
+async def main(queries, url, pbar, failed_queries, db_name, query_group_name):
+    headers = {"accept": "application/json"}
     semaphore = asyncio.Semaphore(70)  # Limit to 50 concurrent requests
     m_mrr = 0
     cont_el = 0
@@ -550,97 +634,123 @@ async def main(queries, url, pbar, failed_queries,db_name,query_group_name):
     async with aiohttp.ClientSession() as session:
         tasks = []
         for param, id, _ in queries:
-            tasks.append(process_item(session, url, id, headers, param, semaphore, pbar))
-        
+            tasks.append(
+                process_item(session, url, id, headers, param, semaphore, pbar)
+            )
+
         results = await asyncio.gather(*tasks)
-        
+
         for (mrr_increment, count), (param, id, item_NERtype) in zip(results, queries):
             if mrr_increment == 0 and count == 0:
                 failed_queries[id] = (id, item_NERtype)
-                
+
                 # redo the same query with the fuzzy
-                name = param['name']
-                
+                name = param["name"]
+
                 # Parse the string into a Python dictionary
-                query_dict = json.loads(param['query'])
+                query_dict = json.loads(param["query"])
 
                 # Modify the "match" field
-                if "query" in query_dict and "bool" in query_dict["query"] and "must" in query_dict["query"]["bool"]:
+                if (
+                    "query" in query_dict
+                    and "bool" in query_dict["query"]
+                    and "must" in query_dict["query"]["bool"]
+                ):
                     for condition in query_dict["query"]["bool"]["must"]:
                         if "match" in condition and "name" in condition["match"]:
                             condition["match"]["name"]["fuzziness"] = "AUTO"
 
                 # Convert back to JSON string
-                param['query'] = json.dumps(query_dict)
+                param["query"] = json.dumps(query_dict)
 
                 response = requests.get(url, params=param)
                 if response.status_code == 200:
                     data = response.json()
-                    #print("after call")
+                    # print("after call")
                     num_result = len(data) if data else 0
                     if data:
                         for item in data:
-                            if id == item.get('id'):
+                            if id == item.get("id"):
                                 pbar.update(1)  # No need to await here
-                                pos_score = item.get('pos_score', 0)
+                                pos_score = item.get("pos_score", 0)
                                 if pos_score:
-                                    mrr_increment = (num_result - (pos_score * num_result)) / num_result
+                                    mrr_increment = (
+                                        num_result - (pos_score * num_result)
+                                    ) / num_result
                                 else:
-                                    mrr_increment = 1 / num_result  # Assume worst case for MRR if pos_score is 0
-                            
+                                    mrr_increment = (
+                                        1 / num_result
+                                    )  # Assume worst case for MRR if pos_score is 0
+
                 m_mrr += mrr_increment
-                cont_el += count 
+                cont_el += count
             else:
                 m_mrr += mrr_increment
                 cont_el += count
 
         asyncio.get_event_loop().call_soon_threadsafe(pbar.close)
 
-    print(f"---------------> Coverage of {db_name} for {query_group_name}: {cont_el / len(queries)}")
-    print(f"---------------> Measure Reciprocal Rank of {db_name} for {query_group_name}: {m_mrr / len(queries)}")
-
+    print(
+        f"---------------> Coverage of {db_name} for {query_group_name}: {cont_el / len(queries)}"
+    )
+    print(
+        f"---------------> Measure Reciprocal Rank of {db_name} for {query_group_name}: {m_mrr / len(queries)}"
+    )
 
 
 queries_HARD = [
     ("queries_ner_to_ner_HARD", queries_ner_to_ner_HARD),
     ("queries_explicit_to_extended_HARD", queries_explicit_to_extended_HARD),
-    ("queries_ner_to_extended_HARD", queries_ner_to_extended_HARD)
+    ("queries_ner_to_extended_HARD", queries_ner_to_extended_HARD),
 ]
 queries_SOFT = [
     ("queries_ner_to_ner_SOFT", queries_ner_to_ner_SOFT),
     ("queries_explicit_to_extended_SOFT", queries_explicit_to_extended_SOFT),
-    ("queries_ner_to_extended_SOFT", queries_ner_to_extended_SOFT)
+    ("queries_ner_to_extended_SOFT", queries_ner_to_extended_SOFT),
 ]
 
 
 async def run_queries():
     tasks = []
-    
+
     # Process HARD queries
     for query_group_name, query_dict in queries_HARD:
         print(f"\nProcessing HARD group: {query_group_name}")
         for db_name, queries in query_dict.items():
             if len(queries) >= 1000:
                 queries = random.sample(queries, 1000)
-            
+
             # Optionally, you can use an async-friendly progress bar (like tqdm_asyncio)
-            pbar = tqdm_asyncio(total=len(queries), desc=f"{query_group_name} for {db_name}")
-            
+            pbar = tqdm_asyncio(
+                total=len(queries), desc=f"{query_group_name} for {db_name}"
+            )
+
             # Schedule the main() call as a concurrent task
-            tasks.append(asyncio.create_task(main(queries, url, pbar, failed_queries, db_name,query_group_name)))
-    
+            tasks.append(
+                asyncio.create_task(
+                    main(queries, url, pbar, failed_queries, db_name, query_group_name)
+                )
+            )
+
     # Process SOFT queries
     for query_group_name, query_dict in queries_SOFT:
         print(f"\nProcessing SOFT group: {query_group_name}")
         for db_name, queries in query_dict.items():
             if len(queries) >= 1000:
                 queries = random.sample(queries, 1000)
-            
-            pbar = tqdm_asyncio(total=len(queries), desc=f"{query_group_name} for {db_name}")
-            tasks.append(asyncio.create_task(main(queries, url, pbar, failed_queries, db_name,query_group_name)))
-    
+
+            pbar = tqdm_asyncio(
+                total=len(queries), desc=f"{query_group_name} for {db_name}"
+            )
+            tasks.append(
+                asyncio.create_task(
+                    main(queries, url, pbar, failed_queries, db_name, query_group_name)
+                )
+            )
+
     # Await all tasks concurrently
     await asyncio.gather(*tasks)
+
 
 # Run the asynchronous function that manages all tasks
 asyncio.run(run_queries())
