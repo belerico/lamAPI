@@ -44,9 +44,10 @@ import asyncio
 import bz2
 import json
 import os
+import sqlite3
 import time
-import traceback
 from collections import Counter
+from pathlib import Path
 
 import aiohttp
 import backoff
@@ -55,18 +56,16 @@ from requests import get
 from SPARQLWrapper import JSON, SPARQLWrapper
 from tqdm import tqdm
 
-BATCH_SIZE = 128  # Number of entities to insert in a single batch
+BATCH_SIZE = 256  # Number of entities to insert in a single batch
 
 # MongoDB connection setup
 MONGO_ENDPOINT, MONGO_ENDPOINT_PORT = os.environ["MONGO_ENDPOINT"].split(":")
 MONGO_ENDPOINT_PORT = int(MONGO_ENDPOINT_PORT)
 MONGO_ENDPOINT_USERNAME = os.environ["MONGO_INITDB_ROOT_USERNAME"]
 # Use environment variable, fallback to localhost if needed
-MONGO_ENDPOINT = "localhost"  # Commented out - was overriding environment variable
+MONGO_ENDPOINT = "localhost"
 MONGO_ENDPOINT_PASSWORD = os.environ["MONGO_INITDB_ROOT_PASSWORD"]
-# DB_NAME = f"wikidata17012025"
-DB_NAME = "wikidata_test"
-
+DB_NAME = f"wikidata17012025"
 print(f"Connecting to MongoDB at {MONGO_ENDPOINT}:{MONGO_ENDPOINT_PORT}...")
 
 # Mongo collections
@@ -122,6 +121,59 @@ PROCESSED_ENTITIES_LOADED = False
 # Initialize performance tracking
 total_size_processed = 0
 num_entities_processed = 0
+
+
+def prepare_db(
+    db_path: str = "types.db",
+    instance_of_path: str | Path = "instance_of.tsv",
+    subclass_of_path: str | Path = "subclass_of.tsv",
+    overwrite: bool = False,
+):
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    if overwrite or not Path(db_path).exists():
+        # Drop existing tables
+        cur.execute("DROP TABLE IF EXISTS instance;")
+        cur.execute("DROP TABLE IF EXISTS subclass;")
+        # Create tables with UNIQUE constraints to avoid duplicate inserts
+        cur.execute(
+            """
+            CREATE TABLE instance(
+                item TEXT,
+                class TEXT,
+                UNIQUE(item, class)
+            );
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_inst_item ON instance(item);")
+        cur.execute(
+            """
+            CREATE TABLE subclass(
+                subclass TEXT,
+                superclass TEXT,
+                UNIQUE(subclass, superclass)
+            );
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_sub_sub ON subclass(subclass);")
+        conn.commit()
+
+        # Bulk insert P31 edges (instances), ignoring duplicates
+        with open(instance_of_path, "r", encoding="utf-8") as f:
+            cur.executemany(
+                "INSERT OR IGNORE INTO instance(item, class) VALUES (?, ?);",
+                (line.strip().split("\t") for line in f if line.strip()),
+            )
+
+        # Bulk insert P279 edges (subclasses), ignoring duplicates
+        with open(subclass_of_path, "r", encoding="utf-8") as f:
+            cur.executemany(
+                "INSERT OR IGNORE INTO subclass(subclass, superclass) VALUES (?, ?);",
+                (line.strip().split("\t") for line in f if line.strip()),
+            )
+        conn.commit()
+        conn.close()
+        print(f"Database prepared at {db_path}")
 
 
 def create_indexes(db):
@@ -453,30 +505,16 @@ def get_wikidata_item_tree_item_idsSPARQL(
         return []
 
 
-def retrieve_superclasses(entity_id):
-    """
-    Retrieve all superclasses of a given Wikidata entity ID with database caching.
-
-    Args:
-        entity_id (str): The ID of the entity (e.g., "Q207784").
-
-    Returns:
-        list: A list of superclass IDs.
-    """
-    # Check database cache first
-    cached_type = types_cache_c.find_one({"entity": entity_id})
-    if cached_type:
-        result = cached_type.get(
-            "extended_types", cached_type.get("extended_WDtypes", [])
-        )
-        return result
-
-    # Define the SPARQL endpoint and query
+def transitive_closure_from_sparql(entities: list[str]) -> dict[str, set[str]]:
+    entities_set = set(entities)
     endpoint_url = "https://query.wikidata.org/sparql"
     query = f"""
-    SELECT ?superclass WHERE {{
-      wd:{entity_id} (wdt:P279)* ?superclass.
-    }}
+        SELECT DISTINCT ?item ?superclass WHERE {{
+        VALUES ?item {{ {entities_set} }}
+        {{ ?item (wdt:P31/wdt:P279*) ?superclass. }}
+        UNION
+        {{ ?item (wdt:P279*) ?superclass. }}
+        }}
     """
 
     @backoff.on_exception(
@@ -505,29 +543,116 @@ def retrieve_superclasses(entity_id):
     try:
         results = query_wikidata(sparql, query)
     except Exception as e:
-        print(f"Failed to retrieve superclasses for {entity_id}: {e}")
-        return []
+        print(f"Failed to retrieve superclasses for {','.join(list(entities_set))}")
+        return {e: set() for e in entities_set}
 
     # Process results
     if results and "results" in results and "bindings" in results["results"]:
-        superclasses = []
+        superclasses = {}
         for result in results["results"]["bindings"]:
-            superclass_id = result["superclass"]["value"].split("/")[-1]
-            superclasses.append(superclass_id)
-
-        # Cache the result in database for future use
-        try:
-            types_cache_c.update_one(
-                {"entity": entity_id},
-                {"$set": {"entity": entity_id, "extended_types": superclasses}},
-                upsert=True,
-            )
-        except Exception as e:
-            print(f"Warning: Could not cache superclasses for {entity_id}: {e}")
-
+            item = result["item"]["value"].split("/")[-1]
+            superclass = result["superclass"]["value"].split("/")[-1]
+            if superclass in entities_set:
+                continue
+            if item not in superclasses:
+                superclasses[item] = set()
+            superclasses[item].add(superclass)
         return superclasses
     else:
-        return []
+        return {e: set() for e in entities_set}
+
+
+def transitive_closure_from_db(
+    connection: sqlite3.Connection, items: list[str] | None = None
+) -> dict[str, set[str]]:
+    cur = connection.cursor()
+
+    if items is None:
+        cur.execute("SELECT DISTINCT item FROM instance;")
+        items = [row[0] for row in cur.fetchall()]
+
+    vals = ",".join(f"('{item}')" for item in items)
+
+    # Recursive CTE: join direct classes and their ancestors
+    query = f"""
+    WITH RECURSIVE
+    items(item) AS (
+        VALUES {vals}
+    ),
+    initial(item, sup) AS (
+        SELECT i.item, i.class
+        FROM instance AS i
+        JOIN items    AS its ON i.item     = its.item
+        UNION
+        SELECT s.subclass, s.superclass
+        FROM subclass AS s
+        JOIN items    AS its ON s.subclass = its.item
+    ),
+    closure(item, sup) AS (
+        SELECT item, sup FROM initial
+        UNION
+        SELECT c.item, s.superclass
+        FROM closure AS c
+        JOIN subclass AS s ON c.sup = s.subclass
+    )
+    SELECT DISTINCT
+    item,
+    sup AS superclass
+    FROM closure
+    ORDER BY item, superclass;
+    """
+    cur = connection.cursor()
+    cur.execute(query)
+    results = cur.fetchall()
+    out = {}
+    for item, superclass in results:
+        if item not in out:
+            out[item] = set()
+        out[item].add(superclass)
+    return out
+
+
+def transitive_closure(
+    entities: list[str], connection: sqlite3.Connection | None = None
+) -> dict[str, set[str]]:
+    if not entities:
+        return {}
+
+    # Check database cache first
+    entities_set = set(entities)
+    cached_types = types_cache_c.find(
+        {"entity": {"$in": list(entities_set)}},
+        {"_id": 0, "entity": 1, "extended_WDtypes": 1},
+    )
+    if cached_types:
+        result = {}
+        for doc in cached_types:
+            entity_id = doc["entity"]
+            extended_types = doc.get("extended_WDtypes", [])
+            result[entity_id] = set(extended_types) - set([entity_id])
+        if result:
+            return result
+
+    if connection is not None:
+        result = transitive_closure_from_db(connection, entities)
+    else:
+        result = transitive_closure_from_sparql(entities)
+    if not result:
+        return {e: set() for e in entities_set}
+
+    # Cache the result in database for future use
+    try:
+        docs = [
+            {"entity": entity_id, "extended_WDtypes": sorted(list(types_set))}
+            for entity_id, types_set in result.items()
+        ]
+        types_cache_c.insert_many(docs, ordered=False)
+    except Exception as e:
+        print(
+            f"Warning: Could not cache superclasses for {','.join(list(entities_set))}"
+        )
+        return {e: set() for e in entities_set}
+    return result
 
 
 def load_processed_entities_fast():
@@ -659,7 +784,13 @@ def batch_check_entities_processed(entity_ids):
     return results
 
 
-def parse_data(item, i, geolocation_subclass, organization_subclass):
+def parse_data(
+    item,
+    i,
+    geolocation_subclass,
+    organization_subclass,
+    connection: sqlite3.Connection | None = None,
+):
     global global_types_id
 
     entity = item["id"]
@@ -711,6 +842,9 @@ def parse_data(item, i, geolocation_subclass, organization_subclass):
                 datavalue = mainsnak.get("datavalue", {})
                 numeric_id = datavalue.get("value", {}).get("numeric-id")
 
+                if numeric_id is not None:
+                    types_list.append("Q" + str(numeric_id))
+
                 # Classify NER types
                 if numeric_id == 5:
                     ner_counter["PERS"] += 1
@@ -726,22 +860,9 @@ def parse_data(item, i, geolocation_subclass, organization_subclass):
                 if ner_type in ["ORG", "PERS", "LOC", "OTHERS"]:
                     NERtype.append(ner_type)
 
-        # TRANSITIVE CLOSURE - reuse the same p31_claims
-        for claim in p31_claims:
-            mainsnak = claim.get("mainsnak", {})
-            datavalue = mainsnak.get("datavalue", {})
-            type_numeric_id = datavalue.get("value", {}).get("numeric-id")
-
-            if type_numeric_id is not None:
-                types_list.append("Q" + str(type_numeric_id))
-
     # Process extended types with database caching
-    total = []
-    for el in types_list:
-        retrieved_types = retrieve_superclasses(el)
-        if retrieved_types:
-            total.extend(retrieved_types)
-    extended_types = list(set(total))
+    extended_types = list(set(transitive_closure([entity], connection).get(entity, [])))
+    extended_types.extend(list(set(types_list)))
 
     # URL EXTRACTION
     url_dict = {}
@@ -832,7 +953,11 @@ def parse_data(item, i, geolocation_subclass, organization_subclass):
         flush_buffer(BUFFER)
 
 
-def parse_wikidata_dump(wikidata_dump_path: str, skip_existing: bool = True):
+def parse_wikidata_dump(
+    wikidata_dump_path: str,
+    skip_existing: bool = True,
+    types_db_path: str | Path | None = None,
+):
     """
     Parse Wikidata dump with optimizations and skip functionality.
 
@@ -897,6 +1022,17 @@ def parse_wikidata_dump(wikidata_dump_path: str, skip_existing: bool = True):
         - set(intOrg_subclass)
         - set(timeZone_subclass)
     )
+
+    # Types db for transitive closure
+    if types_db_path is None:
+        connection = None
+    else:
+        if isinstance(types_db_path, (str, Path)):
+            types_db_path = Path(types_db_path)
+        else:
+            raise ValueError("types_db_path must be a string or Path object")
+        connection = sqlite3.connect(types_db_path)
+        print(f"Connected to types database at {types_db_path}")
 
     print("Starting to parse Wikidata dump...")
 
@@ -988,6 +1124,7 @@ def parse_wikidata_dump(wikidata_dump_path: str, skip_existing: bool = True):
                                 line_idx,
                                 geolocation_subclass,
                                 organization_subclass,
+                                connection,
                             )
                             parse_time += time.time() - parse_start
                             entities_processed_in_chunk += 1
@@ -1308,7 +1445,11 @@ def format_size(bytes_val):
     return f"{bytes_val:.2f} TB"
 
 
-def main(wikidata_dump_path: str, skip_existing: bool = True):
+def main(
+    wikidata_dump_path: str,
+    skip_existing: bool = True,
+    types_db_path: str | Path | None = None,
+):
     """
     Main function to parse Wikidata dump.
 
@@ -1319,7 +1460,7 @@ def main(wikidata_dump_path: str, skip_existing: bool = True):
     print("Creating database indexes...")
     create_indexes(client[DB_NAME])
     print("Starting Wikidata dump parsing...")
-    parse_wikidata_dump(wikidata_dump_path, skip_existing)
+    parse_wikidata_dump(wikidata_dump_path, skip_existing, types_db_path)
 
 
 if __name__ == "__main__":
@@ -1343,6 +1484,11 @@ if __name__ == "__main__":
         dest="skip_existing",
         help="Process all entities, including already processed ones",
     )
+    parser.add_argument(
+        "--types_db_path",
+        help="Path to types database",
+        default="/mnt/lamapi/lamapi/lamAPI/types-db/types.db",
+    )
     args = parser.parse_args()
     args.wikidata_dump_path = os.path.expanduser(args.wikidata_dump_path)
-    main(args.wikidata_dump_path, args.skip_existing)
+    main(args.wikidata_dump_path, args.skip_existing, args.types_db_path)
