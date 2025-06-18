@@ -350,10 +350,6 @@ class StreamingProcessor:
                         # Update total lines read counter (including skipped)
                         if self.lines_skipped < self.skip_lines:
                             continue  # Don't process any blocks yet
-                        elif self.lines_skipped == self.skip_lines and lines_to_add:
-                            print(
-                                f"✅ Finished skipping {self.skip_lines:,} lines, starting processing..."
-                            )
                     else:
                         # Normal mode - add all lines
                         line_buffer.extend(lines)
