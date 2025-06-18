@@ -56,7 +56,7 @@ from requests import get
 from SPARQLWrapper import JSON, SPARQLWrapper
 from tqdm import tqdm
 
-BATCH_SIZE = 256  # Number of entities to insert in a single batch
+BATCH_SIZE = 512  # Number of entities to insert in a single batch
 
 # MongoDB connection setup
 MONGO_ENDPOINT, MONGO_ENDPOINT_PORT = os.environ["MONGO_ENDPOINT"].split(":")
@@ -1038,59 +1038,44 @@ def parse_wikidata_dump(
 
     # Analyze dump file for better progress estimation
     dump_stats = estimate_dump_statistics(wikidata_dump_path)
-    file_size = os.stat(wikidata_dump_path).st_size
-    estimated_total_items = dump_stats[
-        "estimated_total_items"
-    ]  # Optimized file reading with larger buffer and batch processing
+    file_size = os.stat(wikidata_dump_path).st_size  # Compressed size
+    estimated_uncompressed_size = int(
+        file_size * dump_stats.get("estimated_compression_ratio", 10)
+    )
     file_size_mb = file_size / (1024 * 1024)
 
-    # Primary progress bar for entity processing (not file bytes)
+    # Simple progress bar for bytes processed (using estimated uncompressed size)
     pbar = tqdm(
-        total=estimated_total_items,
-        unit="entities",
-        desc="Processing Wikidata entities",
-        bar_format="{desc}: {percentage:3.1f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]",
-        smoothing=0.1,  # Reduce smoothing for more responsive updates
+        total=estimated_uncompressed_size,
+        unit="B",
+        unit_scale=True,
+        desc="Processing dump",
+        bar_format="{desc}: {percentage:3.1f}%|{bar}| {n_fmt}/{total_fmt} [{rate_fmt}, {remaining}, {postfix}]",
     )
 
     # Use optimized bz2 reading
     wikidata_dump = bz2.BZ2File(wikidata_dump_path, "r")
-
-    # Secondary file reading progress (for internal tracking)
-    file_progress = 0
 
     # Initialize tracking variables
     processed_count = 0
     skipped_count = 0
     error_count = 0
     start_time = time.time()
-    last_status_time = start_time
+    last_update_time = start_time
     bytes_processed = 0
 
-    print(
-        f"Ready to process estimated {estimated_total_items:,} items from {file_size_mb:.2f} MB file"
-    )
+    print(f"Processing {file_size_mb:.1f} MB dump file...")
     if skip_existing:
-        print("📋 Skip mode enabled: Already processed entities will be skipped")
-        print("🚀 Loading processed entities for ultra-fast skip detection...")
-        load_processed_entities_fast()  # Load all processed entities at startup
+        print("Skip mode enabled - loading processed entities...")
+        load_processed_entities_fast()
 
-    print("🚀 Starting optimized batch processing with 4096-line chunks...")
-
-    # Batch processing variables for much better performance
-    CHUNK_SIZE = 4096  # Process 4096 lines at a time
+    # Batch processing variables
+    CHUNK_SIZE = 4096
     chunk_buffer = []
-
-    # Add timing for database operations
-    db_check_time = 0
-    parse_time = 0
-    line_count = 0
 
     try:
         for i, line in enumerate(wikidata_dump):
-            line_count += 1
             line_bytes = len(line)
-            bytes_processed += line_bytes
 
             # Add line to chunk buffer
             chunk_buffer.append((line, line_bytes, i))
@@ -1111,14 +1096,8 @@ def parse_wikidata_dump(
                         # Ultra-fast skip check using in-memory set
                         if skip_existing and is_entity_processed_fast(item["id"]):
                             entities_skipped_in_chunk += 1
-                            # Show early feedback for first few skips
-                            if skipped_count + entities_skipped_in_chunk <= 5:
-                                print(
-                                    f"  Skipping already processed entity: {item['id']}"
-                                )
                         else:
                             # Parse the data
-                            parse_start = time.time()
                             parse_data(
                                 item,
                                 line_idx,
@@ -1126,12 +1105,7 @@ def parse_wikidata_dump(
                                 organization_subclass,
                                 connection,
                             )
-                            parse_time += time.time() - parse_start
                             entities_processed_in_chunk += 1
-
-                            # Show early feedback for first few processed items
-                            if processed_count + entities_processed_in_chunk <= 5:
-                                print(f"  Processing entity: {item['id']}")
 
                     except json.decoder.JSONDecodeError:
                         errors_in_chunk += 1
@@ -1142,112 +1116,59 @@ def parse_wikidata_dump(
                 processed_count += entities_processed_in_chunk
                 skipped_count += entities_skipped_in_chunk
                 error_count += errors_in_chunk
-                entities_in_chunk = (
-                    entities_processed_in_chunk + entities_skipped_in_chunk
-                )
 
-                # Update progress bar for entire chunk (much more efficient)
-                if entities_in_chunk > 0:
-                    pbar.update(entities_in_chunk)
+                # Calculate bytes processed in this chunk
+                chunk_bytes = sum(line_size for _, line_size, _ in chunk_buffer)
+                bytes_processed += chunk_bytes
 
-                # Show milestone feedback for skipped entities
-                if skipped_count > 5 and skipped_count % 100000 == 0:
-                    print(f"  ⏭️  Skipped {skipped_count:,} entities so far...")
+                # Update progress bar with bytes processed
+                pbar.update(chunk_bytes)
 
                 # Clear chunk buffer
                 chunk_buffer = []
 
-                # Calculate file progress
-                file_progress = (
-                    (bytes_processed / file_size) * 100 if file_size > 0 else 0
-                )
-
-                # Enhanced status reporting every 15 seconds (less frequent for better performance)
+                # Frequent status updates every 2 seconds for better feedback
                 current_time = time.time()
-                if current_time - last_status_time >= 15.0:
+                if current_time - last_update_time >= 2.0:
                     elapsed_time = current_time - start_time
-                    processing_rate = (
-                        processed_count / elapsed_time if elapsed_time > 0 else 0
-                    )
-                    total_items_seen = processed_count + skipped_count
-                    skip_rate = skipped_count / elapsed_time if elapsed_time > 0 else 0
+
+                    # Calculate MB/s
                     mb_processed = bytes_processed / (1024 * 1024)
-                    mb_rate = mb_processed / elapsed_time if elapsed_time > 0 else 0
+                    mb_per_sec = mb_processed / elapsed_time if elapsed_time > 0 else 0
 
-                    # Calculate entity-based progress percentage (not file-based)
-                    entity_progress_pct = (
-                        (total_items_seen / estimated_total_items * 100)
-                        if estimated_total_items > 0
-                        else 0
-                    )
-
-                    # Calculate skip percentage
-                    skip_percentage = (
-                        (skipped_count / total_items_seen * 100)
-                        if total_items_seen > 0
-                        else 0
-                    )
-
-                    # Calculate timing percentages
-                    avg_db_time = (
-                        (db_check_time / total_items_seen * 1000)
-                        if total_items_seen > 0
-                        else 0
-                    )
-                    avg_parse_time = (
-                        (parse_time / processed_count * 1000)
-                        if processed_count > 0
-                        else 0
-                    )
-
-                    # Estimate remaining time based on entity processing rate
-                    if (
-                        total_items_seen > 0
-                        and estimated_total_items > total_items_seen
-                    ):
-                        remaining_entities = estimated_total_items - total_items_seen
-                        entity_rate = (
-                            total_items_seen / elapsed_time if elapsed_time > 0 else 0
-                        )
-                        if entity_rate > 0:
-                            eta_seconds = remaining_entities / entity_rate
-                            eta = format_time_remaining(eta_seconds)
-                        else:
-                            eta = "Unknown"
+                    # Calculate ETA based on remaining bytes (uncompressed)
+                    bytes_remaining = estimated_uncompressed_size - bytes_processed
+                    if mb_per_sec > 0:
+                        eta_seconds = bytes_remaining / (mb_per_sec * 1024 * 1024)
+                        eta_formatted = format_time_remaining(eta_seconds)
                     else:
-                        eta = "Unknown"
+                        eta_formatted = "Unknown"
 
-                    # Enhanced progress bar description with dual progress tracking
-                    skip_info = f"Skip: {skipped_count:,} ({skip_percentage:.1f}%, {skip_rate:.1f}/s)"
-                    timing_info = (
-                        f"DB: {avg_db_time:.1f}ms | Parse: {avg_parse_time:.1f}ms"
-                    )
-                    pbar.set_description(
-                        f"Entities: {entity_progress_pct:.1f}% | File: {file_progress:.1f}% | "
-                        f"Processed: {processed_count:,} | {skip_info} | "
-                        f"Errors: {error_count} | {timing_info} | "
-                        f"Rate: {processing_rate:.1f}/s, {format_size(mb_rate*1024*1024)}/s | "
-                        f"ETA: {eta}"
+                    # Update progress bar postfix with clear metrics
+                    pbar.set_postfix_str(
+                        f"New: {processed_count:,} | Skipped: {skipped_count:,} | Errors: {error_count} | {mb_per_sec:.1f} MB/s | ETA: {eta_formatted}"
                     )
 
-                    last_status_time = current_time
+                    last_update_time = current_time
 
         # Process any remaining items in the final chunk
         if chunk_buffer:
-            print("Processing final chunk...")
             entities_processed_in_chunk = 0
             entities_skipped_in_chunk = 0
             errors_in_chunk = 0
 
             for line_data, line_size, line_idx in chunk_buffer:
-                item = None
                 try:
                     item = json.loads(line_data[:-2])
                     if skip_existing and is_entity_processed_fast(item["id"]):
                         entities_skipped_in_chunk += 1
                     else:
                         parse_data(
-                            item, line_idx, geolocation_subclass, organization_subclass
+                            item,
+                            line_idx,
+                            geolocation_subclass,
+                            organization_subclass,
+                            connection,
                         )
                         entities_processed_in_chunk += 1
                 except:
@@ -1256,8 +1177,11 @@ def parse_wikidata_dump(
             processed_count += entities_processed_in_chunk
             skipped_count += entities_skipped_in_chunk
             error_count += errors_in_chunk
-            if entities_processed_in_chunk + entities_skipped_in_chunk > 0:
-                pbar.update(entities_processed_in_chunk + entities_skipped_in_chunk)
+
+            # Update final bytes processed
+            final_chunk_bytes = sum(line_size for _, line_size, _ in chunk_buffer)
+            bytes_processed += final_chunk_bytes
+            pbar.update(final_chunk_bytes)
 
     except Exception as e:
         print(f"Critical error during file processing: {str(e)}")
@@ -1271,67 +1195,114 @@ def parse_wikidata_dump(
 
     pbar.close()
 
-    # Final summary with comprehensive statistics
+    # Final summary
     total_time = time.time() - start_time
     total_items = processed_count + skipped_count
-    avg_processing_rate = processed_count / total_time if total_time > 0 else 0
-    avg_skip_rate = skipped_count / total_time if total_time > 0 else 0
-    skip_percentage = (skipped_count / total_items * 100) if total_items > 0 else 0
-    processing_efficiency = (
-        (processed_count / total_items * 100) if total_items > 0 else 0
-    )
     avg_mb_rate = (
         (bytes_processed / (1024 * 1024)) / total_time if total_time > 0 else 0
     )
 
-    print("\n" + "=" * 80)
-    print("WIKIDATA DUMP PROCESSING COMPLETED")
-    print("=" * 80)
-    print(f"Total processing time: {format_time_remaining(total_time)}")
+    print("\n" + "=" * 60)
+    print("PROCESSING COMPLETED")
+    print("=" * 60)
+    print(f"Total time: {format_time_remaining(total_time)}")
+    print(f"Compressed file: {format_size(file_size)}")
     print(
-        f"File read: {format_size(bytes_processed)} "
-        f"of {format_size(file_size)} ({(bytes_processed/file_size)*100:.1f}%)"
+        f"Uncompressed data processed: {format_size(bytes_processed)} / {format_size(estimated_uncompressed_size)} ({bytes_processed/estimated_uncompressed_size*100:.1f}%)"
     )
-    entity_completion = (
-        (total_items / estimated_total_items * 100) if estimated_total_items > 0 else 0
-    )
-    print(
-        f"Entity progress: {total_items:,} of ~{estimated_total_items:,} ({entity_completion:.1f}%)"
-    )
-    print()
-    print("ITEM STATISTICS:")
-    print(f"  • Items processed: {processed_count:,} ({processing_efficiency:.1f}%)")
-    print(f"  • Items skipped: {skipped_count:,} ({skip_percentage:.1f}%)")
-    print(f"  • Total items seen: {total_items:,}")
-    print(f"  • Processing errors: {error_count}")
-    if estimated_total_items > total_items:
-        print(f"  • Estimated remaining: {estimated_total_items - total_items:,}")
-    print()
-    print("PERFORMANCE METRICS:")
-    print(f"  • Processing rate: {avg_processing_rate:.2f} items/second")
-    print(f"  • Skip rate: {avg_skip_rate:.2f} items/second")
-    print(f"  • Data rate: {format_size(avg_mb_rate * 1024 * 1024)}/second")
-    if bytes_processed > 0:
-        print(f"  • Items per MB: {processed_count/(bytes_processed/(1024*1024)):.1f}")
-    print()
-    print("EFFICIENCY ANALYSIS:")
-    if skip_existing:
-        print(f"  • Processing efficiency: {processing_efficiency:.1f}% (new items)")
-        print(f"  • Skip efficiency: {skip_percentage:.1f}% (already processed)")
-        if skip_percentage > 50:
-            print("  • High skip rate detected - most items already processed")
-        elif skip_percentage > 20:
-            print("  • Moderate skip rate - partial reprocessing detected")
+    print(f"Entities processed: {processed_count:,}")
+    print(f"Entities skipped: {skipped_count:,}")
+    print(f"Processing errors: {error_count}")
+    print(f"Average speed: {avg_mb_rate:.1f} MB/s")
+    print("=" * 60)
+
+
+def estimate_compression_ratio_sampling(bz2_file_path, sample_size_mb=100):
+    """
+    Estimate compression ratio by sampling actual compressed vs uncompressed data.
+
+    This is much more accurate than using theoretical ratios.
+
+    Args:
+        bz2_file_path: Path to the BZ2 file
+        sample_size_mb: Size of uncompressed sample to read (MB)
+
+    Returns:
+        tuple: (compression_ratio, total_compressed_size, estimated_uncompressed_size)
+    """
+    try:
+        # Get total compressed file size
+        total_compressed_size = os.path.getsize(bz2_file_path)
+        sample_size_bytes = sample_size_mb * 1024 * 1024
+
+        print(
+            f"Sampling {sample_size_mb}MB of uncompressed data to estimate compression ratio..."
+        )
+
+        # Track compressed bytes read
+        compressed_bytes_read = 0
+        uncompressed_bytes_read = 0
+
+        with open(bz2_file_path, "rb") as raw_file:
+            # Track initial position
+            start_pos = raw_file.tell()
+
+            with bz2.BZ2File(raw_file, "rb") as bz2_file:
+                # Read sample of uncompressed data
+                sample_data = bz2_file.read(sample_size_bytes)
+                uncompressed_bytes_read = len(sample_data)
+
+                # Get compressed bytes consumed
+                end_pos = raw_file.tell()
+                compressed_bytes_read = end_pos - start_pos
+
+        if uncompressed_bytes_read == 0 or compressed_bytes_read == 0:
+            raise ValueError("Could not read sample data")
+
+        # Calculate actual compression ratio (uncompressed / compressed)
+        actual_ratio = uncompressed_bytes_read / compressed_bytes_read
+
+        # Estimate total uncompressed size
+        estimated_uncompressed_size = int(total_compressed_size * actual_ratio)
+
+        print(f"Sample results:")
+        print(
+            f"  - Compressed bytes read: {compressed_bytes_read:,} ({compressed_bytes_read/(1024*1024):.2f} MB)"
+        )
+        print(
+            f"  - Uncompressed bytes read: {uncompressed_bytes_read:,} ({uncompressed_bytes_read/(1024*1024):.2f} MB)"
+        )
+        print(f"  - Measured compression ratio: {actual_ratio:.2f}:1")
+
+        return actual_ratio, total_compressed_size, estimated_uncompressed_size
+
+    except Exception as e:
+        print(f"Warning: Could not sample compression ratio: {e}")
+        # Fallback to realistic estimates
+        total_compressed_size = os.path.getsize(bz2_file_path)
+        compressed_mb = total_compressed_size / (1024 * 1024)
+
+        # Use realistic fallback ratios based on file size
+        if compressed_mb < 100:
+            fallback_ratio = 3.5
+        elif compressed_mb < 10000:
+            fallback_ratio = 4.0
+        elif compressed_mb < 50000:
+            fallback_ratio = 4.2
         else:
-            print("  • Low skip rate - mostly new items being processed")
-    else:
-        print("  • Skip existing disabled - processing all items")
-    print("=" * 80)
+            fallback_ratio = 4.5
+
+        estimated_uncompressed_size = int(total_compressed_size * fallback_ratio)
+        print(f"Using fallback compression ratio: {fallback_ratio:.1f}:1")
+
+        return fallback_ratio, total_compressed_size, estimated_uncompressed_size
 
 
 def estimate_dump_statistics(file_path):
     """
     Estimate statistics about the Wikidata dump file to provide better progress tracking.
+
+    Now uses actual sampling to measure real compression ratio instead of theoretical estimates.
 
     Args:
         file_path: Path to the bz2 compressed Wikidata dump
@@ -1347,51 +1318,41 @@ def estimate_dump_statistics(file_path):
         print(f"Analyzing dump file: {os.path.basename(file_path)}")
         print(f"Compressed size: {compressed_mb:.2f} MB")
 
-        # Sample the first few items to estimate characteristics
-        print("Sampling file to estimate characteristics...")
+        # Sample the first few items to estimate average item size
+        print("Sampling file to estimate average item size...")
         sample_items = 0
-        sample_bytes_compressed = 0
         sample_bytes_uncompressed = 0
 
         with bz2.BZ2File(file_path, "r") as f:
             for i, line in enumerate(f):
-                if i >= 1000:  # Sample first 1000 items
+                if i >= 2000:  # Sample more items for better accuracy
                     break
                 sample_items += 1
                 sample_bytes_uncompressed += len(line)
 
-        # Get position in compressed file after sampling
-        with open(file_path, "rb") as f:
-            # This is approximate since bz2 compression makes exact positioning complex
-            sample_bytes_compressed = min(
-                compressed_size // 100, 1024 * 1024
-            )  # Rough estimate
-
         if sample_items > 0:
-            # Estimate characteristics
+            # Calculate average item size from sample
             avg_item_size_uncompressed = sample_bytes_uncompressed / sample_items
-            compression_ratio = (
-                sample_bytes_uncompressed / sample_bytes_compressed
-                if sample_bytes_compressed > 0
-                else 10
+
+            # Use actual sampling to measure compression ratio
+            actual_ratio, _, estimated_uncompressed_size = (
+                estimate_compression_ratio_sampling(file_path)
             )
 
-            # Estimate total items (conservative estimate)
-            estimated_uncompressed_size = compressed_size * compression_ratio
+            # Calculate estimates
             estimated_total_items = int(
                 estimated_uncompressed_size / avg_item_size_uncompressed
             )
 
             stats = {
                 "compressed_size_mb": compressed_mb,
-                "estimated_compression_ratio": compression_ratio,
+                "estimated_compression_ratio": actual_ratio,
                 "avg_item_size_uncompressed": avg_item_size_uncompressed,
                 "estimated_total_items": estimated_total_items,
                 "estimated_uncompressed_size_mb": estimated_uncompressed_size
                 / (1024 * 1024),
             }
 
-            print(f"Estimated compression ratio: {compression_ratio:.1f}:1")
             print(
                 f"Average item size (uncompressed): {avg_item_size_uncompressed:.0f} bytes"
             )
@@ -1402,22 +1363,35 @@ def estimate_dump_statistics(file_path):
 
             return stats
         else:
-            print("Warning: Could not sample file for estimation")
+            print("Warning: Could not sample file for item size estimation")
+            # Use actual compression ratio but with fallback item size
+            actual_ratio, _, estimated_uncompressed_size = (
+                estimate_compression_ratio_sampling(file_path)
+            )
+            avg_item_size = 2048  # Typical Wikidata entity size
+
             return {
                 "compressed_size_mb": compressed_mb,
-                "estimated_total_items": compressed_size // 1024,  # Very rough fallback
-                "estimated_compression_ratio": 10,
-                "avg_item_size_uncompressed": 1024,
+                "estimated_total_items": int(
+                    estimated_uncompressed_size / avg_item_size
+                ),
+                "estimated_compression_ratio": actual_ratio,
+                "avg_item_size_uncompressed": avg_item_size,
             }
 
     except Exception as e:
         print(f"Error analyzing dump file: {e}")
+        # Conservative fallback with realistic compression ratio
         compressed_size = os.stat(file_path).st_size
+        estimated_compression_ratio = 4.0  # Realistic for BZ2+JSON
+
         return {
             "compressed_size_mb": compressed_size / (1024 * 1024),
-            "estimated_total_items": compressed_size // 1024,  # Very rough fallback
-            "estimated_compression_ratio": 10,
-            "avg_item_size_uncompressed": 1024,
+            "estimated_total_items": int(
+                compressed_size * estimated_compression_ratio / 2048
+            ),
+            "estimated_compression_ratio": estimated_compression_ratio,
+            "avg_item_size_uncompressed": 2048,
         }
 
 
