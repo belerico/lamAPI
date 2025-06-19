@@ -41,6 +41,7 @@ Usage:
     python parse_wikidata_dump_parallel.py --stdin-json  # For piped input
 """
 
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -807,24 +808,26 @@ class WikidataParser:
 
         # Only compute missing entities
         missing_entities = entities_set - cached_entities
+        missing_results = {}
         if missing_entities:
-            if connection is not None:
-                missing_result = self.transitive_closure_from_db(
-                    connection, list(missing_entities)
-                )
+            if connection is None:
+                for entity in missing_entities:
+                    missing_result = self.transitive_closure_from_sparql([entity])
+                    cached_result.update(missing_result)
+                    missing_results.update(missing_result)
             else:
-                missing_result = self.transitive_closure_from_sparql(
-                    list(missing_entities)
-                )
-
-            # Merge results
-            cached_result.update(missing_result)
+                for entity in missing_entities:
+                    missing_result = self.transitive_closure_from_db(
+                        connection, [entity]
+                    )
+                    cached_result.update(missing_result)
+                    missing_results.update(missing_result)
 
             # Cache the missing results in database (async to avoid blocking)
-            if missing_result:
+            if missing_results:
                 try:
                     docs = []
-                    for entity, types in missing_result.items():
+                    for entity, types in missing_results.items():
                         docs.append({"entity": entity, "extended_WDtypes": list(types)})
                     if docs:
                         self.types_cache_c.insert_many(docs, ordered=False)
@@ -880,10 +883,8 @@ class WikidataParser:
 
         query = f"""
             SELECT DISTINCT ?item ?superclass WHERE {{
-            VALUES ?item {{ {entity_list} }}
-            {{ ?item (wdt:P31/wdt:P279*) ?superclass. }}
-            UNION
-            {{ ?item (wdt:P279*) ?superclass. }}
+                VALUES ?item {{ {entity_list} }}
+                {{ ?item (wdt:P279*) ?superclass. }}
             }}
         """
 
@@ -1005,10 +1006,7 @@ class WikidataParser:
                         else:
                             NERtype.add("OTHERS")
 
-        for explicit_type in explicit_types:
-            extended_types.update(
-                self.transitive_closure([explicit_type], connection).get(explicit_type, set())
-            )
+        extended_types.update(self.transitive_closure(explicit_types, connection))
         extended_types.update(explicit_types)
 
         # URL EXTRACTION
