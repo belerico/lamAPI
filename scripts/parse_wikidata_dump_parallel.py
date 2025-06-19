@@ -41,6 +41,7 @@ Usage:
     python parse_wikidata_dump_parallel.py --stdin-json  # For piped input
 """
 
+from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
@@ -100,7 +101,7 @@ class Processor:
         reader_threads=1,
         processor_threads=8,
         block_size=4 * 1024 * 1024,
-        writer_batch_size=2000,
+        writer_batch_size=2048,
     ):
         if reader_threads != 1:
             raise ValueError("reader_threads must be 1 for sequential input")
@@ -431,18 +432,15 @@ class Processor:
 
                     # Write buffers more aggressively to prevent backup
                     total_items = sum(len(batch_buffer[key]) for key in batch_buffer)
-                    if (
-                        total_items >= BUFFER_SIZE // 4  # Flush at quarter buffer size
-                    ) or (
+                    if (total_items >= BUFFER_SIZE // 4) or (
                         total_items > 0
                         and self.result_queue.qsize() > self.result_queue.maxsize * 0.7
-                    ):  # Also flush if result queue is getting full
+                    ):
                         self._flush_batch(batch_buffer)
 
                     self.result_queue.task_done()
 
                 except queue.Empty:
-                    # Check if processing is done
                     if self.stop_processing.is_set() and self.result_queue.empty():
                         break
                     continue
@@ -453,7 +451,6 @@ class Processor:
         except Exception as e:
             print(f"❌ Writer failed: {e}")
         finally:
-            # Write remaining buffers
             if any(batch_buffer.values()):
                 self._flush_batch(batch_buffer)
             print("🏁 Writer finished")
@@ -619,10 +616,8 @@ class WikidataParser:
     """Main Wikidata parser class that handles all processing logic"""
 
     def __init__(self):
-        # Configuration - Optimized for high throughput
-        self.BATCH_SIZE = 2048
-        self.ENTITY_CACHE_SIZE = 50000  # Reduced to lower memory pressure
-        self.skip_existing = True  # Default value
+        self.ENTITY_CACHE_SIZE = 50000
+        self.skip_existing = True
 
         # MongoDB setup
         self._setup_mongodb()
@@ -844,29 +839,30 @@ class WikidataParser:
         vals = ",".join(f"('{item}')" for item in items)
 
         query = f"""
-        WITH RECURSIVE
-        items(item) AS (
-            VALUES {vals}
-        ),
-        initial(item, sup) AS (
-            SELECT i.item, i.class
-            FROM instance AS i
-            JOIN items AS its ON i.item = its.item
-            UNION
-            SELECT s.subclass, s.superclass
-            FROM subclass AS s
-            JOIN items AS its ON s.subclass = its.item
-        ),
-        closure(item, sup) AS (
-            SELECT item, sup FROM initial
-            UNION
-            SELECT c.item, s.superclass
-            FROM closure AS c
-            JOIN subclass AS s ON c.sup = s.subclass
-        )
-        SELECT DISTINCT item, sup AS superclass
-        FROM closure
-        ORDER BY item, superclass;
+            WITH RECURSIVE
+            items(item) AS (
+                VALUES {vals}
+            ),
+            initial(item, sup) AS (
+                -- only direct subclass_of edges for each seed
+                SELECT s.subclass, s.superclass
+                FROM subclass AS s
+                JOIN items     AS its ON s.subclass = its.item
+            ),
+            closure(item, sup) AS (
+                -- walk up the P279 chain
+                SELECT item, sup FROM initial
+                UNION
+                SELECT c.item, s.superclass
+                FROM closure AS c
+                JOIN subclass AS s
+                    ON c.sup = s.subclass
+            )
+            SELECT DISTINCT
+            item,
+            sup     AS superclass
+            FROM closure
+            ORDER BY item, superclass;
         """
 
         cur.execute(query)
@@ -985,20 +981,21 @@ class WikidataParser:
 
         # NER type classification and extended types processing
         NERtype = set()
-        extended_types = []
-        types_list = []
+        explicit_types = set()
+        extended_types = set()
 
         if item.get("type") == "item" and "claims" in item:
-            p31_claims = item["claims"].get("P31", [])
+            types_claims = item["claims"].get("P31", [])
+            types_claims.extend(item["claims"].get("P279", []))
 
-            if len(p31_claims) != 0:
-                for claim in p31_claims:
+            if len(types_claims) != 0:
+                for claim in types_claims:
                     mainsnak = claim.get("mainsnak", {})
                     datavalue = mainsnak.get("datavalue", {})
                     numeric_id = datavalue.get("value", {}).get("numeric-id")
 
                     if numeric_id is not None:
-                        types_list.append("Q" + str(numeric_id))
+                        explicit_types.add("Q" + str(numeric_id))
                         if numeric_id == 5:
                             NERtype.add("PERS")
                         elif numeric_id in geolocation_subclass:
@@ -1008,11 +1005,11 @@ class WikidataParser:
                         else:
                             NERtype.add("OTHERS")
 
-        # Process extended types with database caching
-        extended_types = list(
-            set(self.transitive_closure([entity], connection).get(entity, []))
-        )
-        extended_types.extend(list(set(types_list)))
+        for explicit_type in explicit_types:
+            extended_types.update(
+                self.transitive_closure([explicit_type], connection).get(explicit_type, set())
+            )
+        extended_types.update(explicit_types)
 
         # URL EXTRACTION
         url_dict = {}
@@ -1085,8 +1082,8 @@ class WikidataParser:
                 "kind": category,
                 "ner_types": list(NERtype),
                 "urls": url_dict,
-                "extended_types": extended_types,
-                "explicit_types": types_list,
+                "extended_types": list(extended_types),
+                "explicit_types": list(explicit_types),
             },
             "objects": {"id_entity": i, "entity": entity, "objects": objects},
             "literals": {"id_entity": i, "entity": entity, "literals": literals},
@@ -1357,7 +1354,7 @@ def main():
         "-t",
         type=int,
         help="Number of processing threads (default: auto-detect)",
-        default=4,
+        default=1,
     )
 
     args = parser.parse_args()
