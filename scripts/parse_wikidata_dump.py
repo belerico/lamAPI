@@ -908,7 +908,7 @@ def parse_data(
                 if datatype == "wikibase-item" or datatype == "wikibase-property":
                     if "datavalue" in obj["mainsnak"]:
                         value = obj["mainsnak"]["datavalue"]["value"]["id"]
-                        if predicate == "P31" or predicate == "P106":
+                        if predicate == "P31":
                             types["P31"].append(value)
                         if value not in objects:
                             objects[value] = []
