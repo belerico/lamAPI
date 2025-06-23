@@ -101,8 +101,8 @@ class Processor:
         parser: "WikidataParser",
         reader_threads=1,
         processor_threads=8,
-        block_size=4 * 1024 * 1024,
-        writer_batch_size=2048,
+        block_size=6 * 1024 * 1024,
+        writer_batch_size=8192,
     ):
         if reader_threads != 1:
             raise ValueError("reader_threads must be 1 for sequential input")
@@ -288,6 +288,11 @@ class Processor:
         connection = None
         if types_db_path:
             connection = sqlite3.connect(types_db_path)
+            connection.execute("PRAGMA journal_mode = WAL")
+            connection.execute("PRAGMA synchronous = NORMAL")
+            connection.execute("PRAGMA cache_size = 10000")
+            connection.execute("PRAGMA temp_store = MEMORY")
+            connection.execute("PRAGMA mmap_size = 268435456")  # 256MB
             print(f"Worker {worker_id}: Connected to types database")
 
         try:
