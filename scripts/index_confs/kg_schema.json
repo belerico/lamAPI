@@ -38,8 +38,6 @@
             "kind": {
                 "type": "keyword"
             },
-            
-
             "NERtype": {
                 "type": "keyword"
             },
@@ -49,10 +47,6 @@
             "extended_types": {
                 "type": "keyword"
             },
-
-
-
-
             "types": {
                 "type": "text"
             },
