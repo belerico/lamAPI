@@ -1,3 +1,7 @@
+import dotenv
+
+dotenv.load_dotenv(override=True)
+
 import argparse
 import json
 import os
@@ -176,14 +180,38 @@ def index_data(
 
     index_name = re.sub(r"\d+$", "", db_name)
     es_client = create_elasticsearch_client(es_host, es_port, localhost=use_localhost)
-    if es_client.indices.exists(index=index_name):
-        print(f"Index {index_name} exists. Deleting it...")
-        es_client.indices.delete(index=index_name)
 
-    print(f"Creating index {index_name}...")
-    es_client.indices.create(
-        index=index_name, settings=mapping["settings"], mappings=mapping["mappings"]
-    )
+    # Create index if it doesn't exist
+    if not es_client.indices.exists(index=index_name):
+        print(f"Creating index {index_name}...")
+        es_client.indices.create(
+            index=index_name, settings=mapping["settings"], mappings=mapping["mappings"]
+        )
+    else:
+        print(f"Index {index_name} already exists. Will check for existing documents.")
+
+    # Get all existing entity IDs in the index
+    print("Retrieving existing entity IDs from Elasticsearch...")
+    existing_ids = set()
+    try:
+        # Use scan to get all existing IDs efficiently
+        from elasticsearch.helpers import scan
+
+        scan_results = scan(
+            es_client,
+            query={"query": {"match_all": {}}, "_source": ["id"]},
+            index=index_name,
+            size=1024,
+        )
+        for doc in tqdm(scan_results):
+            entity_id = doc["_source"].get("id")
+            if entity_id:
+                existing_ids.add(entity_id)
+        print(f"Found {len(existing_ids)} existing entities in index.")
+
+    except Exception as e:
+        print(f"Warning: Could not retrieve existing IDs: {e}")
+        existing_ids = set()  # Continue with empty set if retrieval fails
 
     # Disable refresh interval and replicas temporarily
     es_client.indices.put_settings(
@@ -196,12 +224,23 @@ def index_data(
 
     buffer = []
     batches = []
-    pbar = tqdm(total=total_docs, desc="Indexing documents")
     _id = 0
+    skipped_count = 0
+    processed_count = 0
+    pbar = tqdm(total=total_docs, desc="Indexing documents")
+
     for item in results:
         try:
             # Handle both "entity" and "id_entity" fields for compatibility
             id_entity = item.get("entity") or item.get("id_entity")
+
+            # Skip if entity already exists in Elasticsearch
+            if str(id_entity) in existing_ids:
+                skipped_count += 1
+                pbar.update(1)
+                continue
+
+            processed_count += 1
             labels = item.get("labels", {})
             aliases = item.get("aliases", {})
 
@@ -321,9 +360,16 @@ def index_data(
 
     if len(batches) > 0:
         with Pool(max_threads) as pool:
-            pool.map(process_batch, [(es_host, es_port, batch) for batch in batches])
+            pool.map(
+                process_batch, [(es_host, es_port, batch, use_localhost) for batch in batches]
+            )
 
     pbar.close()
+    print(
+        f"Processing complete: {processed_count} new documents processed, "
+        f"{skipped_count} existing documents skipped."
+    )
+
     # Enable refresh interval
     es_client.indices.put_settings(
         index=index_name, settings={"index": {"refresh_interval": "1s"}}
@@ -362,6 +408,7 @@ def main():
 
     # Get environment variables
     try:
+        print(os.environ["ELASTIC_ENDPOINT"])
         ELASTIC_ENDPOINT, ELASTIC_PORT = os.environ["ELASTIC_ENDPOINT"].split(":")
         MONGO_ENDPOINT, MONGO_ENDPOINT_PORT = os.environ["MONGO_ENDPOINT"].split(":")
     except KeyError as e:
