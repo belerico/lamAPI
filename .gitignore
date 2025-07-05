@@ -167,3 +167,4 @@ mongo-data/
 data/
 elasticdata/
 .vscode/launch.json
+types-db/

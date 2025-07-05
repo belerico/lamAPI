@@ -12,7 +12,6 @@ SUPPORTED_KGS = SUPPORTED_KGS.split(",")
 
 
 class Database:
-
     def __init__(self):
         self.mongo = MongoClient(
             MONGO_ENDPOINT,
@@ -22,7 +21,7 @@ class Database:
         )
         self.mappings = {kg.lower(): None for kg in SUPPORTED_KGS}
         self.update_mappings()
-        self.create_indexes()
+        # self.create_indexes()
 
     def update_mappings(self):
         history = {}

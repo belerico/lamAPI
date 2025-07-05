@@ -18,5 +18,8 @@ RUN pip install spacy
 RUN python -m spacy download en_core_web_sm
 RUN python -m spacy download en_core_web_trf
 
+ENV NLTK_DATA=/usr/local/nltk_data
+RUN python -m nltk.downloader -d /usr/local/nltk_data punkt stopwords
+
 # Copy the rest of the application code
 COPY . .
