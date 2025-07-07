@@ -58,7 +58,7 @@ import sqlite3
 import sys
 import threading
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 import aiohttp
 import backoff
@@ -968,13 +968,24 @@ class WikidataParser:
         is_type = item["claims"].get("P279", None)
         if is_type is not None:
             category = "type"
-        if entity[0] == "P":
+        elif entity[0] == "P":
             category = "predicate"
+        else:
+            instance_of = item["claims"].get("P31", None)
+        if instance_of is not None:
+            for claim in instance_of:
+                mainsnak = claim.get("mainsnak", {})
+                datavalue = mainsnak.get("datavalue", {})
+                claim_qid = datavalue.get("value", {}).get("id", None)
+                if claim_qid is not None:
+                    if claim_qid == "Q4167410":  # Wikimedia disambiguation page
+                        category = "disambiguation"
 
         # NER type classification and extended types processing
-        NERtype = set()
+        ner_types = list()
         explicit_types = set()
         extended_types = set()
+        ner_counter = Counter()
         types = {"P31": [], "P279": []}
 
         if item.get("type") == "item" and "claims" in item:
@@ -986,21 +997,32 @@ class WikidataParser:
                     mainsnak = claim.get("mainsnak", {})
                     datavalue = mainsnak.get("datavalue", {})
                     claim_qid = datavalue.get("value", {}).get("id", None)
-
                     if claim_qid is not None:
                         explicit_types.add(claim_qid)
-                        if claim_qid == 5:
-                            NERtype.add("PERS")
+                        claim_id_numeric = (
+                            int(claim_qid[1:]) if claim_qid.startswith("Q") else None
+                        )
+                        if claim_id_numeric == 5:
+                            ner_counter["PERS"] += 1
                         elif claim_qid in geolocation_subclass:
-                            NERtype.add("LOC")
+                            ner_counter["LOC"] += 1
                         elif claim_qid in organization_subclass:
-                            NERtype.add("ORG")
+                            ner_counter["ORG"] += 1
                         else:
-                            NERtype.add("OTHERS")
+                            ner_counter["OTHERS"] += 1
                     if mainsnak.get("property") == "P31":
                         types["P31"].append(claim_qid)
                     elif mainsnak.get("property") == "P279":
                         types["P279"].append(claim_qid)
+                for ner_type in ner_counter:
+                    if ner_type == "ORG":
+                        ner_types.append("ORG")
+                    elif ner_type == "PERS":
+                        ner_types.append("PERS")
+                    elif ner_type == "LOC":
+                        ner_types.append("LOC")
+                    elif ner_type == "OTHERS":
+                        ner_types.append("OTHERS")
 
         for explicit_type, retrieved_superclasses in self.transitive_closure(
             explicit_types, connection
@@ -1071,7 +1093,7 @@ class WikidataParser:
                 "types": types,
                 "popularity": popularity,
                 "kind": category,
-                "ner_types": list(NERtype),
+                "ner_types": ner_types,
                 "urls": url_dict,
                 "extended_types": list(extended_types),
                 "explicit_types": list(explicit_types),
